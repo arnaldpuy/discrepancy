@@ -1,42 +1,8 @@
----
-title: "Discrepancy as a sensitivity measure in mathematical modeling"
-subtitle: "R code"
-author: "Arnald Puy"
-header-includes:
-  - \usepackage[font=footnotesize]{caption}
-  - \usepackage{dirtytalk}
-  - \usepackage{booktabs}
-  - \usepackage{tabulary}
-  - \usepackage{enumitem}
-  - \usepackage{lmodern}
-  - \usepackage[T1]{fontenc}
-  - \usepackage{tikz}
-output:
-  pdf_document:
-    fig_caption: yes
-    number_sections: yes
-    toc: yes
-    toc_depth: 2
-    keep_tex: true
-  word_document:
-    toc: no
-    toc_depth: '2'
-  html_document:
-    keep_md: true
-link-citations: yes
-fontsize: 11pt
-bibliography: /Users/arnaldpuy/Documents/bibtex/ERC-sensitivity.bib
----
-
-```{r setup, include=FALSE}
+## ----setup, include=FALSE--------------------------------------------------------
 knitr::opts_chunk$set(echo = TRUE, dev = "tikz", cache = TRUE)
-```
 
-\newpage
 
-# Preliminary functions
-
-```{r, results="hide", message=FALSE, warning=FALSE, cache=FALSE}
+## ---- results="hide", message=FALSE, warning=FALSE, cache=FALSE------------------
 
 # PRELIMINARY ------------------------------------------------------------------
 
@@ -68,26 +34,8 @@ loadPackages(c("sensobol", "data.table", "tidyverse", "parallel",
                "RcppAlgos", "scales", "doParallel", "benchmarkme", 
                "cowplot"))
 
-library("checkpoint")
-checkpoint("2022-04-07", 
-           R.version ="4.1.2", 
-           checkpointLocation = getwd())
-```
 
-\newpage
-
-# Goal
-We aim at checking whether discrepancy measures can be used as a sensitivity measure to reliably rank parameters in terms of their influence in the model output. To that aim, we explore how well the symmetric L2-discrepancy measure ranks the most important parameters of a set of functions, including for the moment the Oakley and O'Hagan 2004 and the Bratley et al. 1992 functions, and compare its efficacy with that of the Jansen estimator. We do the comparison on Savage-score transformed ranks [@Iman1987].
-
-The discrepancy is computed directly on the plane of the $X_i$, $Y$ scatterplots where $X_i$ is a coordinate $(0,1)$ of the input hypercube and $Y$ is the output rescaled in $0,1$. For each of the $k$ scatterplots, the points are sorted by one of the  $X_i$. The idea is that a ''pattern'' (=effect) corresponds to a deviation from a uniform distribution of points (noise) for a non-influential variable: the largest the effect, the larger the discrepancy, e.g., there are areas in the plot where points are denser and areas where they are more rarefied.  
-
-One might wonder why use a discrepancy measure when there are the Sobol' indices. The reply is that many do not understand the theory behind them (and the same applies to moment independent methods or VARS), while everyone understands scatterplots. 'Explaining' discrepancy as a measure of the non-uniformity of the scatterplots appears an avenue likely to appeal to some users.
-
-# Required functions
-
-## Savage ranks function
-
-```{r savage_fun}
+## ----savage_fun------------------------------------------------------------------
 
 # SAVAGE SCORES FUNCTION -------------------------------------------------------
 
@@ -99,11 +47,9 @@ savage_scores <- function(x) {
   out <- sort(rowSums(mat), decreasing = TRUE)[true.ranks]
   return(out)
 }
-```
 
-## Discrepancy function
 
-```{r discrepancy_fun, dependson="savage_scores"}
+## ----discrepancy_fun, dependson="savage_scores"----------------------------------
 
 # DISCREPANCY FUNCTION ---------------------------------------------------------
 
@@ -114,6 +60,7 @@ savage_scores <- function(x) {
 rescale_fun <- function(x) (x - min(x)) / (max(x) - min(x))
 
 # Source cpp code -------------------------------
+
 cpp_functions <- c("cpp_functions.cpp", "L2star_functions.cpp", 
                    "L2_functions.cpp", "L2centered_functions.cpp", 
                    "L2wraparound_functions.cpp")
@@ -173,6 +120,7 @@ discrepancy_fun <- function (design, type) {
   return(R)
 }
 
+
 # Discrepancy function --------------------------
 discrepancy <- function(mat, y, params, type) {
   value <- sapply(1:ncol(mat), function(j) {
@@ -181,11 +129,9 @@ discrepancy <- function(mat, y, params, type) {
   })
   return(value)
 }
-```
 
-## Jansen estimator
 
-```{r jansen_fun}
+## ----jansen_fun------------------------------------------------------------------
 
 # FUNCTION TO COMPUTE JANSEN TI ------------------------------------------------
 
@@ -199,11 +145,9 @@ jansen_ti <- function(d, N, params) {
   value <- (1 / (2 * N) * Rfast::colsums((Y_A - Y_AB) ^ 2)) / VY
   return(value)
 }
-```
 
-## Function to replicate sample matrix
 
-```{r replicas}
+## ----replicas--------------------------------------------------------------------
 
 # FUNCTION TO CREATE REPLICAS OF SAMPLE MATRIX ---------------------------------
 
@@ -258,11 +202,8 @@ sobol_replicas_A_AB <- function(N, params, replicas) {
   }
   return(out)
 }
-```
 
-## Function to check correlation between discrepancy and jansen
-
-```{r correlation, dependson=c("replicas", "jansen_fun", "discrepancy_fun", "savage_fun")}
+## ----correlation, dependson=c("replicas", "jansen_fun", "discrepancy_fun", "savage_fun")----
 
 # FUNCTION TO CHECK CORRELAITON BETWEEN DISCREPANCIES AND SAVAGE SCORES --------
 
@@ -303,11 +244,9 @@ cor_fun <- function(N = N, params = params, replicas = replicas,
   
   return(final)
 }
-```
 
-# The Bratley et al. 1992 and the Oakland and O'Hagan 2004 functions
 
-```{r bratley_check}
+## ----bratley_check---------------------------------------------------------------
 
 # CHECK SOBOL' INDICES AND SCATTERPLOT FOR SEVERAL FUNCTIONS ------------------
 
@@ -339,11 +278,9 @@ for (i in models) {
 }
 
 lapply(ind, plot)
-```
 
-# Run the model
 
-```{r model, dependson="correlation"}
+## ----model, dependson="correlation"----------------------------------------------
 
 # THE MODEL -------------------------------------------------------------------
 
@@ -400,9 +337,9 @@ results <- lapply(output, function(x) lapply(x, function(y)
   .[, Approach:= ifelse(Approach == "discrepancy", "Discrepancy", "Jansen estimator")] %>%
   na.omit()
 
-```
 
-```{r plot, dependson="model", warning=FALSE, fig.height=4, fig.cap="Correlation between the Savage scores obtained with $T_i$ (Jansen estimator) and those obtained with discrepancy."}
+
+## ----plot, dependson="model", warning=FALSE, fig.height=4, fig.cap="Correlation between the Savage scores obtained with $T_i$ (Jansen estimator) and those obtained with discrepancy."----
 
 # Plot the results ------------------------------------------------------------
 
@@ -417,11 +354,8 @@ ggplot(results, aes(Model.runs, z, group = Model.runs)) +
              scale = "free_x", space = "free", 
              labeller = labeller(Approach = supp.labs)) +
   theme_AP()
-```
 
-# The metamodel
-
-```{r metamodel_fun}
+## ----metamodel_fun---------------------------------------------------------------
 
 # RANDOM FUNCTIONS AND DISTRIBUTIONS ------------------------------------------
 
@@ -467,11 +401,10 @@ random_distributions <- function(X, phi) {
   }
   return(out)
 }
-```
 
-```{r model_fun, dependson=c("metamodel_fun", "savage_fun", "discrepancy_fun", "jansen_fun")}
+## ----model_fun, dependson=c("metamodel_fun", "savage_fun", "discrepancy_fun", "jansen_fun")----
 
-# DEFINE MODEL -----------------------------------------------------------------
+# DEFINE MODEL ----------------------------------------------------------------
 
 model_fun <- function(tau, epsilon, base.sample.size, cost.discrepancy, phi, k) {
   
@@ -519,13 +452,13 @@ model_fun <- function(tau, epsilon, base.sample.size, cost.discrepancy, phi, k) 
     
   return(out)
 }
-```
 
-```{r matrix}
 
-# CREATE SAMPLE MATRIX --------------------------------------------------------
+## ----matrix----------------------------------------------------------------------
 
-N <- 2^10
+# CREATE SAMPLE MATRIX -------------------------------------------------------
+
+N <- 2^2
 params <- c("epsilon", "phi", "k", "tau", "base.sample.size")
 mat <- sobol_matrices(matrices = "A", N = N, params = params)
 
@@ -541,11 +474,11 @@ cost.jansen <- mat[, "base.sample.size"] * (mat[, "k"] + 1)
 cost.discrepancy <- cost.jansen
 
 final.mat <- cbind(mat, cost.jansen, cost.discrepancy)
-```
 
-```{r run_model_fun, dependson=c("model_fun", "matrix")}
 
-# RUN MODEL  -----------------------------------------------------------------
+## ----run_model_fun, dependson="model_fun"----------------------------------------
+
+# RUN MODEL  ------------------------------------------------------------------
 
 y <- mclapply(1:nrow(final.mat), function(i) {
   model_fun(tau = final.mat[i, "tau"],
@@ -555,11 +488,8 @@ y <- mclapply(1:nrow(final.mat), function(i) {
             phi = final.mat[i, "phi"], 
             k = final.mat[i, "k"])}, 
   mc.cores = floor(detectCores() * 0.75))
-```
 
-```{r arrange_output, dependson=c("run_model_fun", "matrix")}
-
-# ARRANGE DATA ----------------------------------------------------------------
+# ARRANGE DATA -----------------------------------------------------------------
 
 y <- lapply(y, unlist)
 output <- data.table(do.call(rbind, y))
@@ -568,11 +498,7 @@ colnames(output) <- discrepancy_methods
 
 final.output <- data.table(cbind(final.mat, output))
 
-# Write model output
-fwrite(final.output, "final.output.csv")
-```
-
-```{r plot_uncertainty, dependson=c("run_model_fun", "arrange_output"), warning = FALSE, fig.height=3, fig.width=3}
+## ----plot_uncertainty, dependson="run_model_fun", warning = FALSE, fig.height=3, fig.width=3----
 
 # PLOT UNCERTAINTY ------------------------------------------------------------
 
@@ -604,42 +530,33 @@ b <- melt(final.output, measure.vars = discrepancy_methods) %>%
   scale_x_discrete(position = "top", 
                    labels = supp.labs) +
   theme_AP()
-```
-
-```{r plot_scatter, dependson="plot_uncertainty", fig.height=4, fig.width=5, warning = FALSE}
-
-# PLOT SCATTERPLOT ------------------------------------------------------------
-
-a
-
-```
-
-
-```{r plot_boxplots, dependson="plot_uncertainty", fig.height=2, fig.width=5}
-
-# PLOT BOXPLOTS ---------------------------------------------------------------
 
 b
-```
 
-```{r merge_plots, dependson=c("plot_scatter", "plot_boxplots"), fig.height=6, fig.width=4.5}
-
-# MERGE PLOTS -----------------------------------------------------------------
 legend <- get_legend(a + theme(legend.position = "top", 
                                legend.margin=margin(0, 0, 0, 0),
                                legend.box.margin=margin(-7,-7,-7,-7)))
-bottom <- plot_grid(a, b, ncol = 2, labels = "auto", 
-                    rel_widths = c(0.45, 0.55))
+bottom <- plot_grid(a, b, ncol = 2, labels = "auto")
 
-plot_grid(legend, bottom, ncol = 1, rel_heights = c(0.1, 0.9), 
-          rel_widths = c(0.25, 0.75))
-```
+plot_grid(legend, bottom, ncol = 1, rel_heights = c(0.08, 0.9))
 
-\newpage
 
-# Session information
+# SOME STATISTICS -------------------------------------------------------------
 
-```{r session_information}
+final.stat <- melt(final.output, measure.vars = discrepancy_methods) 
+
+final.stat[, .(mean = mean(value), median = median(value), sd = sd(value), 
+        max = max(value), min = min(value)), variable]
+
+final.stat[, .(quantile = quantile(value)), variable]
+
+
+
+
+
+
+
+## ----session_information---------------------------------------------------------
 
 # SESSION INFORMATION --------------------------------------------------------------
 
@@ -656,8 +573,133 @@ cat("Num threads: "); print(detectCores(logical = TRUE))
 
 ## Return the machine RAM
 cat("RAM:         "); print (get_ram()); cat("\n")
-```
 
-\newpage
 
-# References
+
+
+
+
+
+
+
+
+prove <- final.mat[1, ]
+k <- prove[["k"]]
+params <- paste("X", 1:k, sep = "")
+tau <- prove[["tau"]]
+epsilon <- prove[["epsilon"]]
+phi <- prove[["phi"]]
+cost.discrepancy <- prove[["cost.discrepancy"]]
+base.sample.size <- prove[["base.sample.size"]]
+
+
+
+
+if (tau == 1) {
+  
+  type <- "R"
+  
+} else if (tau == 2) {
+  
+  type <- "QRN"
+}
+set.seed(epsilon)
+discrepancy.mat <- sobol_matrices(matrices = "A", N = cost.discrepancy, 
+                                  params = params, 
+                                  type = type)
+
+set.seed(epsilon)
+jansen.mat <- sobol_matrices(matrices = c("A", "AB"), N = base.sample.size, 
+                             params = params, 
+                             type = type)
+
+
+all.matrices <- rbind(discrepancy.mat, jansen.mat)
+set.seed(epsilon)
+transformed.all.matrices <- random_distributions(X = all.matrices, phi = phi)
+
+y <- sensobol::metafunction(data = transformed.all.matrices, epsilon = epsilon)
+
+type <- c("symmetric", "star", "L2", "centered")
+
+discrepancy.value <- lapply(type, function(x) 
+  discrepancy(mat = all.matrices[1:cost.discrepancy, ], 
+              y = y[1:cost.discrepancy], params = params, type = x))
+
+
+jansen.value <- jansen_ti(d = y[(cost.discrepancy + 1):length(y)],
+                          N = base.sample.size, params = params)
+
+savage.discrepancy <- lapply(discrepancy.value, savage_scores)
+jansen.discrepancy <- savage_scores(jansen.value)
+
+out <- lapply(savage.discrepancy, function(x) 
+  cor(x, jansen.discrepancy))
+
+plot_scatter(data = all.matrices[1:cost.discrepancy, ], 
+             N = cost.discrepancy, Y = y[1:cost.discrepancy], params = params)
+
+
+
+
+
+
+da <- data.table("jansen" = jansen.value, 
+           "discrepancy" = discrepancy.value[[1]]) %>%
+  .[, rank.jansen:= rank(-jansen)] %>%
+  .[, rank.discrepancy:= rank(-discrepancy)] %>%
+  .[, parameter:= paste("X", 1:nrow(.), sep = "")]
+
+
+da
+
+
+
+
+mat
+
+
+
+
+params <- paste("X", 1:k, sep = "")
+
+if (tau == 1) {
+  
+  type <- "R"
+  
+} else if (tau == 2) {
+  
+  type <- "QRN"
+}
+set.seed(epsilon)
+discrepancy.mat <- sobol_matrices(matrices = "A", N = cost.discrepancy, 
+                                  params = params, 
+                                  type = type)
+
+set.seed(epsilon)
+jansen.mat <- sobol_matrices(matrices = c("A", "AB"), N = base.sample.size, 
+                             params = params, 
+                             type = type)
+
+set.seed(epsilon)
+all.matrices <- random_distributions(X = rbind(discrepancy.mat, jansen.mat), phi = phi)
+
+# all.matrices <- rbind(discrepancy.mat, jansen.mat)
+
+y <- sensobol::metafunction(data = all.matrices, epsilon = epsilon)
+
+type <- c("symmetric", "star", "L2", "centered")
+
+discrepancy.value <- lapply(type, function(x) 
+  discrepancy(mat = all.matrices[1:cost.discrepancy, ], 
+              y = y[1:cost.discrepancy], params = params, type = x))
+
+
+jansen.value <- jansen_ti(d = y[(cost.discrepancy + 1):length(y)],
+                          N = base.sample.size, params = params)
+
+savage.discrepancy <- lapply(discrepancy.value, savage_scores)
+jansen.discrepancy <- savage_scores(jansen.value)
+
+out <- lapply(savage.discrepancy, function(x) 
+  cor(x, jansen.discrepancy))
