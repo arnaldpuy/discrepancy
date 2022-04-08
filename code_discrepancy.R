@@ -63,7 +63,7 @@ rescale_fun <- function(x) (x - min(x)) / (max(x) - min(x))
 
 cpp_functions <- c("cpp_functions.cpp", "L2star_functions.cpp", 
                    "L2_functions.cpp", "L2centered_functions.cpp", 
-                   "L2wraparound_functions.cpp")
+                   "L2wraparound_functions.cpp", "L2modified_functions.cpp")
 
 for(i in 1:length(cpp_functions)) {
   Rcpp::sourceCpp(cpp_functions[i])
@@ -115,6 +115,13 @@ discrepancy_fun <- function (design, type) {
     
     s1 <- DisW2_Crossprod(t(X), dimension)
     R <- sqrt(-(4/3)^dimension + (1/n^2) * s1)
+    
+  } else if (type == "modified") {
+    
+    P <- 3 - X^2
+    s1 <- DisM2_Rowprod(t(P), dimension)
+    s2 <- DisM2_Crossprod(c(t(X)), dimension)
+    R <- sqrt(((4/3)^dimension) - (((2^(1 - dimension))/n) * s1) + ((1/n^2) * s2))
     
   }
   return(R)
@@ -434,7 +441,7 @@ model_fun <- function(tau, epsilon, base.sample.size, cost.discrepancy, phi, k) 
   
   y <- sensobol::metafunction(data = transformed.all.matrices, epsilon = epsilon)
   
-  type <- c("symmetric", "star", "L2", "centered", "wraparound")
+  type <- c("symmetric", "star", "L2", "centered", "wraparound", "modified")
   
   discrepancy.value <- lapply(type, function(x) 
     discrepancy(mat = all.matrices[1:cost.discrepancy, ], 
@@ -493,7 +500,8 @@ y <- mclapply(1:nrow(final.mat), function(i) {
 
 y <- lapply(y, unlist)
 output <- data.table(do.call(rbind, y))
-discrepancy_methods <- c("symmetric", "star", "L2", "centered", "wraparound")
+discrepancy_methods <- c("symmetric", "star", "L2", "centered", 
+                         "wraparound", "modified")
 colnames(output) <- discrepancy_methods
 
 final.output <- data.table(cbind(final.mat, output))
@@ -503,12 +511,13 @@ final.output <- data.table(cbind(final.mat, output))
 # PLOT UNCERTAINTY ------------------------------------------------------------
 
 # New facet label names for supp variable
-supp.labs <- c("Symmetric", "Star", "$L_2$", "Centered", "Wrap-around")
+supp.labs <- c("Symmetric", "Star", "$L_2$", "Centered", "Wrap-around", "Modified")
 names(supp.labs) <- discrepancy_methods
 
 a <- melt(final.output, measure.vars = discrepancy_methods) %>%
   .[, variable:= factor(variable, levels = c("star", "L2", "centered", 
-                                                "wraparound", "symmetric"))] %>%
+                                                "wraparound", "symmetric", 
+                                             "modified"))] %>%
   ggplot(., aes(cost.discrepancy, k, color = value)) + 
   geom_point(size = 1) + 
   scale_colour_gradientn(colours = c("black", "purple", "red", "orange", "yellow", "lightgreen"), 
@@ -539,21 +548,6 @@ legend <- get_legend(a + theme(legend.position = "top",
 bottom <- plot_grid(a, b, ncol = 2, labels = "auto")
 
 plot_grid(legend, bottom, ncol = 1, rel_heights = c(0.08, 0.9))
-
-
-# SOME STATISTICS -------------------------------------------------------------
-
-final.stat <- melt(final.output, measure.vars = discrepancy_methods) 
-
-final.stat[, .(mean = mean(value), median = median(value), sd = sd(value), 
-        max = max(value), min = min(value)), variable]
-
-final.stat[, .(quantile = quantile(value)), variable]
-
-
-
-
-
 
 
 ## ----session_information---------------------------------------------------------
@@ -703,3 +697,9 @@ jansen.discrepancy <- savage_scores(jansen.value)
 
 out <- lapply(savage.discrepancy, function(x) 
   cor(x, jansen.discrepancy))
+
+
+
+
+library(checkpoint)
+checkpoint("2020-01-01", r_version="4.1.2")
