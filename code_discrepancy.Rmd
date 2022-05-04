@@ -66,7 +66,9 @@ theme_AP <- function() {
 # Load the packages
 loadPackages(c("sensobol", "data.table", "tidyverse", "parallel", 
                "RcppAlgos", "scales", "doParallel", "benchmarkme", 
-               "cowplot"))
+               "cowplot", "wesanderson"))
+
+# CPP CODE ---------------------------------------------------------------------
 
 # Source cpp code -------------------------------
 cpp_functions <- c("cpp_functions.cpp", "L2star_functions.cpp", 
@@ -88,6 +90,8 @@ The discrepancy is computed directly on the plane of the $X_i$, $Y$ scatterplots
 One might wonder why use a discrepancy measure when there are the Sobol' indices. The reply is that many do not understand the theory behind them (and the same applies to moment independent methods or VARS), while everyone understands scatterplots. 'Explaining' discrepancy as a measure of the non-uniformity of the scatterplots appears an avenue likely to appeal to some users.
 
 # Required functions
+
+## C++ functions
 
 ## Savage ranks function
 
@@ -203,225 +207,6 @@ jansen_ti <- function(d, N, params) {
 }
 ```
 
-## Function to replicate sample matrix
-
-```{r replicas}
-
-# FUNCTION TO CREATE REPLICAS OF SAMPLE MATRIX ---------------------------------
-
-# For discrepancy
-CutBySize <- function(m, block.size, nb = ceiling(m / block.size)) {
-  int <- m / nb
-  upper <- round(1:nb * int)
-  lower <- c(1, upper[-nb] + 1)
-  size <- c(upper[1], diff(upper))
-  cbind(lower, upper, size)
-}
-
-sobol_replicas <- function(matrices, N, params, replicas,...) {
-  mat <- sobol_matrices(matrices = matrices, N = N * replicas, 
-                        params = params,...)
-  index <- CutBySize(nrow(mat), block.size = N)
-  out <- list()
-  for (i in 1:nrow(index)) {
-    out[[i]] <- mat[index[i, "lower"]:index[i, "upper"], ]
-  }
-  return(out)
-}
-
-# For Sobol' indices
-scrambled_sobol <- function(A, B) {
-  X <- rbind(A, B)
-  for(i in 1:ncol(A)) {
-    AB <- A
-    AB[, i] <- B[, i]
-    X <- rbind(X, AB)
-  }
-  AB <- rbind(A, X[((2*nrow(A)) + 1):nrow(X), ])
-  return(AB)
-}
-# Function to create replicas of the A, B and AB matrices
-sobol_replicas_A_AB <- function(N, params, replicas) {
-  k <- length(params)
-  df <- randtoolbox::sobol(n = N * replicas, dim = k * 2)
-  indices <- CutBySize(nrow(df), nb = replicas)
-  X <- A <- B <- out <- list()
-  for(i in 1:nrow(indices)) {
-    lower <- indices[i, "lower"]
-    upper <- indices[i, "upper"]
-    X[[i]] <- df[lower:upper, ]
-  }
-  for(i in seq_along(X)) {
-    A[[i]] <- X[[i]][, 1:k]
-    B[[i]] <- X[[i]][, (k + 1) : (k * 2)]
-  }
-  for(i in seq_along(A)) {
-    out[[i]] <- scrambled_sobol(A[[i]], B[[i]])
-  }
-  return(out)
-}
-```
-
-## Function to check correlation between discrepancy and jansen
-
-```{r correlation, dependson=c("replicas", "jansen_fun", "discrepancy_fun", "savage_fun")}
-
-# FUNCTION TO CHECK CORRELAITON BETWEEN DISCREPANCIES AND SAVAGE SCORES --------
-
-cor_fun <- function(N = N, params = params, replicas = replicas, 
-                    type = "symmetric", approach = NULL,
-                    model_fun = NULL, true_scores = NULL,...) {
-  
-  if (is.null(approach)) {
-    stop("approach should be either discrepancy or sobol")
-  }
-  
-  if (is.null(model_fun) | is.null(true_scores)) {
-    stop("A function and the true ranks should be provided")
-  }
-  
-  if (approach == "discrepancy") {
-    
-    mat <- sobol_replicas(matrices = "A", N = N, params = params, 
-                          replicas = replicas,...)
-    y <- lapply(mat, model_fun)
-    
-    out <- list()
-    for(i in 1:length(y)) {
-      out[[i]] <- discrepancy(mat = mat[[i]], y = y[[i]], params = params, 
-                              type = type) %>%
-        savage_scores()
-    }
-    
-  } else if (approach == "sobol") {
-    
-    mat <- sobol_replicas_A_AB(N = N, params = params, replicas = replicas)
-    y <- lapply(mat, model_fun)
-    out <- lapply(y, function(x) jansen_ti(d = x, N = N, params = params) %>%
-                    savage_scores()) 
-  }
-  
-  final <- unlist(lapply(out, function(x) cor(x, true_scores)))
-  
-  return(final)
-}
-```
-
-# The Bratley et al. 1992 and the Oakland and O'Hagan 2004 functions
-
-```{r bratley_check}
-
-# CHECK SOBOL' INDICES AND SCATTERPLOT FOR SEVERAL FUNCTIONS ------------------
-
-N <- 2^15 # Base sample size
-matrices <- c("A", "B", "AB")
-R <- 10^3 # Bootstrap replicas
-
-models <- c("Bratley et al. 1992", "Oakland and O'Hagan 2004")
-fun_list <- list(bratley1992_Fun, oakley_Fun)
-names(fun_list) <- models
-
-out <- ind <- savage.rank <- list()
-for (i in models) {
-  
-  if (i == "Bratley et al. 1992") {
-    params <- paste("X", 1:6, sep = "")
-    
-  } else if (i == "Oakland and O'Hagan 2004") {
-    params <- paste("X", 1:15, sep = "")
-  }
-  
-  mat <- sobol_matrices(matrices = matrices, N = N, params = params)
-  y <- fun_list[[i]](mat)
-  ind[[i]] <- sobol_indices(matrices = matrices, Y = y, N = N, params = params, 
-                       boot = TRUE, R = R)
-  savage.rank[[i]] <- ind[[i]]$results[sensitivity == "Ti"] %>%
-    .[, savage_scores(original)]
-  out[[i]] <-plot_scatter(data = mat, N = N, Y = y, params = params) 
-}
-
-lapply(ind, plot)
-```
-
-# Run the model
-
-```{r model, dependson="correlation"}
-
-# THE MODEL -------------------------------------------------------------------
-
-matrices <- "A"
-replicas <- 150 # Number of replicas of the sample matrix
-
-output <-  list()
-
-for(i in models) {
-  
-  if (i == "Bratley et al. 1992") {
-    params <- paste("X", 1:6, sep = "")
-    
-  } else if (i == "Oakland and O'Hagan 2004") {
-    params <- paste("X", 1:15, sep = "")
-
-  }
-  
-  for (j in c("discrepancy", "sobol")) {
-    
-    if (j == "discrepancy") {
-      
-      if(i == "Bratley et al. 1992") {
-        sample.sizes <- seq(4, 150, by = 4)
-        final.sample.sizes <- sample.sizes
-      } else {
-        sample.sizes <- seq(4, 320, by = 4)
-        final.sample.sizes <- sample.sizes
-      }
-
-    } else if (j == "sobol") {
-      sample.sizes <- 2:20
-      final.sample.sizes <- sample.sizes * (length(params) + 1)
-      
-    }
-    output[[i]][[j]] <- mclapply(sample.sizes, function(x) 
-      cor_fun(N = x, params = params, replicas = replicas, model_fun = fun_list[[i]], 
-              true_scores = savage.rank[[i]], approach = j, type = "symmetric",
-              scrambling = 1), 
-      mc.cores = detectCores() * 0.75)
-    
-    names(output[[i]][[j]]) <- final.sample.sizes
-
-  }
-}
-
-# Arrange output -------------------
-results <- lapply(output, function(x) lapply(x, function(y) 
-  lapply(y, function(z) data.table(z))))  %>%
-  lapply(., function(x) lapply(x, function(y) rbindlist(y, idcol = "Model.runs"))) %>%
-  lapply(., function(x) rbindlist(x, idcol = "Approach")) %>%
-  rbindlist(., idcol = "Function") %>%
-  .[, Model.runs:= as.numeric(Model.runs)] %>%
-  .[, Approach:= ifelse(Approach == "discrepancy", "Discrepancy", "Jansen estimator")] %>%
-  na.omit()
-
-```
-
-```{r plot, dependson="model", warning=FALSE, fig.height=4, fig.cap="Correlation between the Savage scores obtained with $T_i$ (Jansen estimator) and those obtained with discrepancy."}
-
-# Plot the results ------------------------------------------------------------
-
-# New facet label names for supp variable
-supp.labs <- c("Symmetric $L2$ discrepancy", "Jansen estimator")
-names(supp.labs) <- c("Discrepancy", "Jansen estimator")
-
-ggplot(results, aes(Model.runs, z, group = Model.runs)) +
-  geom_boxplot(position = "identity", outlier.size = 0.5) +
-  labs(x = "Nº of model runs", y = "Correlation") +
-  facet_grid(Approach~Function, 
-             scale = "free_x", space = "free", 
-             labeller = labeller(Approach = supp.labs)) +
-  theme_AP()
-```
-
-# Plotting functions
 
 ```{r fun_list}
 
@@ -461,7 +246,7 @@ for (i in names(f_list)) {
     k <- 2
   }
   params <- paste("$x_", 1:k, "$", sep = "")
-  N <- 2^7
+  N <- 100
   mat <- sobol_matrices(N = N, params = params, scrambling = 1)
   y <- f_list[[i]](mat)
   y <- rescale_fun(y)
@@ -594,6 +379,8 @@ scatters_plot <- plot_grid(out[[1]] + facet_wrap(~variable, ncol = 1),
 scatters_plot
 ```
 
+## Define the model
+
 ```{r model_fun, dependson=c("metamodel_fun", "savage_fun", "discrepancy_fun", "jansen_fun")}
 
 # DEFINE MODEL -----------------------------------------------------------------
@@ -646,6 +433,8 @@ model_fun <- function(tau, epsilon, base.sample.size, cost.discrepancy, phi, k) 
 }
 ```
 
+## Run the model
+
 ```{r matrix}
 
 # CREATE SAMPLE MATRIX --------------------------------------------------------
@@ -682,6 +471,8 @@ y <- mclapply(1:nrow(final.mat), function(i) {
   mc.cores = floor(detectCores() * 0.75))
 ```
 
+## Arrange model output
+
 ```{r arrange_output, dependson=c("run_model_fun", "matrix")}
 
 # ARRANGE DATA ----------------------------------------------------------------
@@ -698,134 +489,13 @@ final.output <- data.table(cbind(final.mat, output))
 fwrite(final.output, "final.output.csv")
 ```
 
-```{r plot_uncertainty, dependson=c("run_model_fun", "arrange_output"), warning = FALSE, fig.height=3, fig.width=3}
+# Model for discretization
 
-# PLOT UNCERTAINTY ------------------------------------------------------------
-
-# New facet label names for supp variable
-supp.labs <- c("Symmetric", "Star", "$L_2$", "Centered", "Wrap-around", "Modified")
-names(supp.labs) <- discrepancy_methods
-
-a <- melt(final.output, measure.vars = discrepancy_methods) %>%
-  .[, variable:= factor(variable, levels = c("modified", "star", "L2",
-                                             "centered", "wraparound", 
-                                             "symmetric"))] %>%
-  ggplot(., aes(cost.discrepancy, k, color = value)) + 
-  geom_point(size = 0.4) + 
-  scale_colour_gradientn(colours = c("black", "purple", "red", "orange", 
-                                     "yellow", "lightgreen"), 
-                         name = expression(italic(r)), 
-                         breaks = pretty_breaks(n = 3)) +
-  scale_x_continuous(breaks = pretty_breaks(n = 3)) +
-  scale_y_continuous(breaks = pretty_breaks(n = 3)) +
-  labs(x = "Nº of model runs", y = "$k$") + 
-  facet_wrap(~variable, ncol = 1, labeller = labeller(variable = supp.labs)) +
-  theme_AP() + 
-  theme(legend.position = "none", 
-        strip.background = element_rect(fill = "white"))
-
-b <- melt(final.output, measure.vars = discrepancy_methods) %>%
-  ggplot(., aes(reorder(variable, -value), value)) +
-  geom_boxplot(outlier.size = 0.8) + 
-  coord_flip() +
-  labs(x = "", y = "$r$") + 
-  scale_x_discrete(position = "top", 
-                   labels = supp.labs) +
-  theme_AP()
-```
-
-```{r plot_scatter, dependson="plot_uncertainty", fig.height=4, fig.width=5, warning = FALSE}
-
-# PLOT SCATTERPLOT ------------------------------------------------------------
-
-a
-
-```
-
-
-```{r plot_boxplots, dependson="plot_uncertainty", fig.height=2, fig.width=5}
-
-# PLOT BOXPLOTS ---------------------------------------------------------------
-
-b
-```
-
-```{r merge_plots, dependson=c("plot_scatter", "plot_boxplots"), fig.height=6.3, fig.width=4.2, warning=FALSE}
-
-# MERGE PLOTS -----------------------------------------------------------------
-legend <- get_legend(a + theme(legend.position = "top", 
-                               legend.margin=margin(0, 0, 0, 0),
-                               legend.box.margin=margin(-7,-7,-7,-7)))
-bottom <- plot_grid(a, b, ncol = 2, labels = "auto", 
-                    rel_widths = c(0.45, 0.55))
-
-plot_grid(legend, bottom, ncol = 1, rel_heights = c(0.1, 0.9), 
-          rel_widths = c(0.2, 0.8))
-```
-
-```{r stats, dependson="arrange_output"}
-
-# SOME STATISTICS -------------------------------------------------------------
-
-final.stat <- melt(final.output, measure.vars = discrepancy_methods) 
-
-final.stat[, .(mean = mean(value), median = median(value), sd = sd(value), 
-               max = max(value), min = min(value)), variable] %>%
-  .[order(-median)]
-
-final.stat[, .(quantile = quantile(value)), variable]
-```
-
-
-```{r uncertainty_plots2, fig.height=3, fig.width=6.4, warning=FALSE, dependson="scatters_plot"}
-
-# PLOT SCATTERS WITH UNCERTAINTY ----------------------------------------------
-
-# New facet label names for supp variable
-supp.labs <- c("Symmetric", "Star", "$L_2$", "Centered", "Wrap-around", "Modified")
-names(supp.labs) <- discrepancy_methods
-
-a <- melt(final.output, measure.vars = discrepancy_methods) %>%
-  .[, variable:= factor(variable, levels =   c("symmetric", "wraparound", 
-                                               "centered", "L2",
-                                               "star","modified"))] %>%
-  ggplot(., aes(cost.discrepancy, k, color = value)) + 
-  geom_point(size = 0.3) + 
-  scale_colour_gradientn(colours = c("black", "purple", "red", "orange", "yellow", "lightgreen"), 
-                         name = expression(italic(r)), 
-                         breaks = pretty_breaks(n = 3)) +
-  scale_x_continuous(breaks = pretty_breaks(n = 2)) +
-  scale_y_continuous(breaks = pretty_breaks(n = 2)) +
-  labs(x = "Nº of model runs", y = "$k$") + 
-  facet_wrap(~variable, ncol = 6, labeller = labeller(variable = supp.labs)) +
-  theme_AP() + 
-  theme(legend.position = "none", 
-        strip.background = element_rect(fill = "white"), 
-        plot.margin = unit(c(0, 0.2, 0, 0), "cm"), 
-        strip.text = element_text(size = 8))
-
-b <- melt(final.output, measure.vars = discrepancy_methods) %>%
-  ggplot(., aes(reorder(variable, -value), value)) +
-  geom_boxplot() + 
-  labs(x = "Discrepancy measures", y = "$r$") + 
-  scale_x_discrete(position = "bottom", 
-                   labels = supp.labs) +
-  theme_AP()
-
-legend <- get_legend(a + theme(legend.position = "top", 
-                               legend.margin=margin(0, 0, 0, 0),
-                               legend.box.margin=margin(-7,-7,-7,-7)))
-bottom <- plot_grid(a, b, ncol = 1, labels = c("d", "e"))
-
-da <- plot_grid(legend, bottom, ncol = 1, rel_heights = c(0.15, 0.85))
-
-full.plot <- plot_grid(scat_plot, da, ncol = 2, rel_widths = c(0.25, 0.75))
-full.plot
-```
+## Define the model
 
 ```{r discretization_fun, dependson = c("jansen_fun", "discrepancy_fun", "savage_fun")}
 
-# DISCRETIZATION FUNCTIONS ----------------------------------------------------
+# DISCRETIZATION FUNCTIONS -----------------------------------------------------
 
 plot_ti <- function(ind, params) {
   
@@ -852,11 +522,11 @@ discretization_fun <- function(N, k, epsilon, plot.scatterplot = FALSE,
   # which parameters to discretize (n.parameters), and the 
   # number of levels (n.levels)
   set.seed(epsilon)
-  n.discrete <- sample(1:k, size = 1)
+  n.discrete <- sample(1:ceiling(k / 2), size = 1)
   set.seed(epsilon)
   n.parameters <- sample(1:k, size = n.discrete)
   set.seed(epsilon)
-  n.levels <- sample(1:10, size = 1)
+  n.levels <- sample(2:5, size = 1)
   
   # Discretization of the sampled parameters
   mat2[, n.parameters] <- floor(mat2[, n.parameters] * n.levels) + 1
@@ -888,6 +558,8 @@ discretization_fun <- function(N, k, epsilon, plot.scatterplot = FALSE,
 }
 ```
 
+## Run the model
+
 ```{r discrete_sims, dependson=c("jansen_fun", "discrepancy_fun", "savage_fun", "discretization_fun")}
 
 # CREATE SAMPLE MATRIX -------------------------------------------------------
@@ -914,11 +586,36 @@ y.discrete <- mclapply(1:nrow(mat), function(i) {
   mc.cores = floor(detectCores() * 0.75))
 ```
 
-```{r discretization_scatter}
+```{r arrange_discrete, dependson="discrete_sims"}
+
+# ARRANGE OUTPUT ---------------------------------------------------------------
+
+y.discrete <- lapply(y.discrete, unlist)
+output <- data.table(do.call(rbind, y.discrete))
+discrepancy_methods <- c("symmetric", "star", "L2", "centered", 
+                         "wraparound", "modified")
+colnames(output) <- discrepancy_methods
+
+final.output.discrete <- data.table(cbind(mat, output))
+
+melt(final.output.discrete, measure.vars = discrepancy_methods) %>%
+  .[, .(mean = mean(value, na.rm = TRUE), 
+        median = median(value, na.rm = TRUE)), variable] %>%
+  .[order(-median)]
+```
+
+```{r export_output_discrete, dependson="arrange_discrete"}
+
+# EXPORT OUTPUT DISCRETE ------------------------------------------------------
+
+fwrite(final.output.discrete, "final.output.discrete.csv")
+```
+
+```{r discretization_scatter, dependson="discrete_sims"}
 
 # RUN MODEL TO GET SCATTERPLOTS -----------------------------------------------
 
-N.scatter <- 2^7
+N.scatter <- 2^6
 N.indices <- 2^10
 
 y.scatters <- mclapply(1:nrow(mat[1:10, ]), function(i) {
@@ -940,42 +637,16 @@ y.indices <- mclapply(1:nrow(mat[1:10, ]), function(i) {
                      plot.jansen = TRUE, 
                      savage.scores = FALSE)}, 
   mc.cores = floor(detectCores() * 0.75))
-
-# ARRANGE OUTPUT ---------------------------------------------------------------
-
-y.discrete <- lapply(y.discrete, unlist)
-output <- data.table(do.call(rbind, y.discrete))
-discrepancy_methods <- c("symmetric", "star", "L2", "centered", 
-                         "wraparound", "modified")
-colnames(output) <- discrepancy_methods
-
-final.output.discrete <- data.table(cbind(mat, output))
-
-melt(final.output.discrete, measure.vars = discrepancy_methods) %>%
-  .[, .(mean = mean(value, na.rm = TRUE), 
-        median = median(value, na.rm = TRUE)), variable] %>%
-  .[order(-median)]
-
-# PLOT UNCERTAINTY -------------------------------------------------------------
-
-boxplots.discrete <- melt(final.output.discrete, measure.vars = discrepancy_methods) %>%
-  ggplot(., aes(reorder(variable, -value), value)) +
-  geom_boxplot() + 
-  scale_x_discrete(guide = guide_axis(n.dodge = 2), 
-                   labels = supp.labs) +
-  labs(x = "", y = "$r$") + 
-  theme_AP() +
-  theme(plot.margin = unit(c(0, 0.1, 0, 0), "cm"))
-
-boxplots.discrete
 ```
+
+## Bratley et al. function
 
 ```{r bratley_fun, dependson="discrepancy_fun", fig.height=1.3, fig.width=6.4}
 
 # PLOT ORIGINAL BRATLEY ET AL. FUNCTION ---------------------------------------
 
 # Settings -----------------------------
-N <- 2^7
+N <- 2^6
 k <- 6
 params <- paste("$x_", 1:k,"$", sep = "")
 matrices <- c("A", "AB")
@@ -1005,52 +676,130 @@ bratley_plots <- plot_grid(bratley_scatter, bratley_ti, labels = c("f", ""),
 bratley_plots
 ```
 
-```{r merged_plots, dependson=c("bratley_fun", "uncertainty_plots2"), fig.height=4.3, fig.width=6.4, warning=FALSE}
-
-top.plots <- plot_grid(full.plot, bratley_plots, ncol = 1, rel_heights = c(0.75, 0.25))
-
-top.plots
-```
+## Plot Bratley et al.
 
 ```{r merged_plots_all, dependson=c("bratley_fun", "uncertainty_plots2"), fig.height=5.6, fig.width=6.4, warning=FALSE}
 
+# PLOT BRATLEY ET AL. DISCRETIZED ---------------------------------------------
 
 selected.plots <- 10
-
 bottom.plots <- plot_grid(y.scatters[[selected.plots]] + 
                             facet_wrap(~variable, ncol = 6 ,scales = "free_x") + 
                             scale_x_continuous(breaks = pretty_breaks(n = 3)) + 
                             scale_y_continuous(breaks = pretty_breaks(n = 3))  +
-                            labs(x = "x", y = "$y$"), 
+                            labs(x = "$x$", y = "$y$"), 
                           y.indices[[selected.plots]], 
                           ncol = 2, rel_widths = c(0.73, 0.27))
 
-plot_grid(top.plots, bottom.plots, ncol = 1, rel_heights = c(0.77, 0.23), 
-          labels = c("", "g"))
-```
-\newpage
-
-# Session information
-
-```{r session_information}
-
-# SESSION INFORMATION --------------------------------------------------------------
-
-sessionInfo()
-
-## Return the machine CPU
-cat("Machine:     "); print(get_cpu()$model_name)
-
-## Return number of true cores
-cat("Num cores:   "); print(detectCores(logical = FALSE))
-
-## Return number of threads
-cat("Num threads: "); print(detectCores(logical = TRUE))
-
-## Return the machine RAM
-cat("RAM:         "); print (get_ram()); cat("\n")
+all.bottom.plots <- plot_grid(bratley_plots, bottom.plots, ncol = 1, labels = c("", "g"), 
+                              rel_heights = c(0.47, 0.53))
+all.bottom.plots
 ```
 
-\newpage
+## Plot uncertainty meta-model
+
+```{r plot_uncertainty, dependson=c("run_model_fun", "arrange_output"), warning = FALSE, fig.height=3, fig.width=3}
+
+# PLOT UNCERTAINTY -----------------------------------------------------------
+
+
+# SCATTERPLOT ----------------------------------
+
+supp.labs <- c("Symmetric", "Star", "$L_2$", "Centered", "Wrap-around", "Modified")
+names(supp.labs) <- discrepancy_methods
+
+# SCATTERPLOT -----------------------------------
+
+a <- melt(final.output, measure.vars = discrepancy_methods) %>%
+  .[, variable:= factor(variable, levels =   c("symmetric", "wraparound", 
+                                               "centered", "L2",
+                                               "star","modified"))] %>%
+  ggplot(., aes(cost.discrepancy, k, color = value)) + 
+  geom_point(size = 0.4) + 
+  scale_colour_gradientn(colours = c("black", "purple", "red", "orange", 
+                                     "yellow", "lightgreen"), 
+                         name = expression(italic(r)), 
+                         breaks = pretty_breaks(n = 3)) +
+  scale_x_continuous(breaks = pretty_breaks(n = 3)) +
+  scale_y_continuous(breaks = pretty_breaks(n = 3)) +
+  labs(x = "Nº of model runs", y = "$d$") + 
+  facet_wrap(~variable, ncol = 6, labeller = labeller(variable = supp.labs)) +
+  theme_AP() + 
+  theme(legend.position = "none", 
+        strip.background = element_rect(fill = "white"), 
+        strip.text.x = element_text(size = 8))
+
+# BOXPLOTS --------------------------------------
+
+discrete.dt <- melt(final.output.discrete, measure.vars = discrepancy_methods) %>%
+  .[, Function:= "Bratley et al. 1992"] %>%
+  .[, .(variable, value, Function)]
+
+final.dt <- melt(final.output, measure.vars = discrepancy_methods) %>%
+  .[, Function:= "Meta-model"] %>%
+  .[, .(variable, value, Function)]
+
+b <- rbind(discrete.dt, final.dt) %>%
+  ggplot(., aes(reorder(variable, -value), value, fill = Function)) +
+  geom_boxplot(outlier.size = 0.5) + 
+  scale_x_discrete(labels = supp.labs) +
+  scale_fill_manual(values = wes_palette(2, name = "Chevalier1")) +
+  labs(x = "", y = "$r$") + 
+  theme_AP() +
+  theme(legend.position = "none",
+        plot.margin = unit(c(0, 0.1, 0, 0), "cm"))
+
+```
+
+```{r plot_scatter, dependson="plot_uncertainty", fig.height=4, fig.width=5, warning = FALSE}
+
+# PLOT SCATTERPLOT ------------------------------------------------------------
+
+a
+
+```
+
+
+```{r plot_boxplots, dependson="plot_uncertainty", fig.height=2, fig.width=5}
+
+# PLOT BOXPLOTS ---------------------------------------------------------------
+
+b
+```
+
+```{r merged_plots_all2, dependson=c("merge_plots", "bratley_fun", "uncertainty_plots2", "merged_plots_all", "plot_uncertainty", "plot_fun_list"), fig.height=6.6, fig.width=6.4, warning=FALSE}
+
+# MERGE ALL PLOTS -------------------------------------------------------------
+
+legend <- get_legend(a + theme(legend.position = "top", 
+                               legend.margin=margin(0, 0, 0, 0),
+                               legend.box.margin=margin(-7,-7,-7,-7)))
+
+legend.boxplot <- get_legend(b + theme(legend.position = "top", 
+                               legend.margin=margin(0, 0, 0, 0),
+                               legend.box.margin=margin(-7,-7,-7,-7)))
+
+boxplots.plot <- plot_grid(legend.boxplot, b, ncol = 1, rel_heights = c(0.15, 0.85), 
+                           labels = c("e", ""))
+scatters.plot <- plot_grid(legend, a, ncol = 1, rel_heights = c(0.18, 0.82), 
+                           labels = c("d", ""))
+da <- plot_grid(scatters.plot, boxplots.plot, ncol = 1, rel_heights = c(0.55, 0.45))
+
+full.plot <- plot_grid(scat_plot, da, ncol = 2, rel_widths = c(0.25, 0.75))
+full.plot
+
+plot_grid(full.plot, all.bottom.plots, ncol = 1, rel_heights = c(0.6, 0.45), 
+          labels = c("", ""))
+
+```
+
+```{r statistics, dependson=c("arrange_output", "arrange_discrete")}
+
+# STATISTICS ------------------------------------------------------------------
+
+rbind(discrete.dt, final.dt) %>%
+  .[, .(mean = mean(value), median = median(value)), .(Function, variable)] %>%
+  .[order(-mean, variable)]
+```
 
 # References
