@@ -499,14 +499,13 @@ discretization_fun <- function(N, k, epsilon, plot.scatterplot = FALSE,
 
 # CREATE SAMPLE MATRIX -------------------------------------------------------
 
-N <- 2^7
-params <- c("N", "k", "epsilon")
+N <- 2^9
+params <- c("k", "epsilon")
 mat <- sobol_matrices(matrices = "A", N = N, params = params)
 
 # Define distributions --------------------------
 
 mat[, "epsilon"] <- floor(qunif(mat[, "epsilon"], 1, N))
-mat[, "N"] <- floor(qunif(mat[, "N"], 5000, 5000))
 mat[, "k"] <- floor(qunif(mat[, "k"], 6, 50))
 
 # RUN MODEL --------------------------------------------------------------------
@@ -545,26 +544,23 @@ melt(final.output.discrete, measure.vars = discrepancy_methods) %>%
 
 N.scatter <- 2^8
 N.indices <- 2^10
+row.selected <- 63
 
-y.scatters <- mclapply(1:nrow(mat[1:10, ]), function(i) {
-  discretization_fun(N = N.scatter,
-                     k = mat[i, "k"],
-                     epsilon = mat[i, "epsilon"], 
-                     plot.scatterplot = TRUE, 
-                     plot.jansen = FALSE, 
-                     savage.scores = FALSE)}, 
-  mc.cores = floor(detectCores() * 0.75))
+y.scatters <- discretization_fun(N = N.scatter,
+                                k = mat[row.selected, "k"],
+                                epsilon = mat[i, "epsilon"], 
+                                plot.scatterplot = TRUE, 
+                                plot.jansen = FALSE, 
+                                savage.scores = FALSE)
 
 # RUN MODEL TO GET JANSEN TI --------------------------------------------------
 
-y.indices <- mclapply(1:nrow(mat[1:10, ]), function(i) {
-  discretization_fun(N = N.indices,
-                     k = mat[i, "k"],
+y.indices <- discretization_fun(N = N.indices,
+                     k = mat[row.selected, "k"],
                      epsilon = mat[i, "epsilon"], 
                      plot.scatterplot = FALSE, 
                      plot.jansen = TRUE, 
-                     savage.scores = FALSE)}, 
-  mc.cores = floor(detectCores() * 0.75))
+                     savage.scores = FALSE)
 
 
 ## ----bratley_fun, dependson="discrepancy_fun", fig.height=1.3, fig.width=6.4----
@@ -606,13 +602,12 @@ bratley_plots
 
 # PLOT BRATLEY ET AL. DISCRETIZED ---------------------------------------------
 
-selected.plots <- 10
-bottom.plots <- plot_grid(y.scatters[[selected.plots]] + 
-                            facet_wrap(~variable, ncol = 6 ,scales = "free_x") + 
+bottom.plots <- plot_grid(y.scatters + 
+                            facet_wrap(~variable, ncol = 8 ,scales = "free_x") + 
                             scale_x_continuous(breaks = pretty_breaks(n = 3)) + 
                             scale_y_continuous(breaks = pretty_breaks(n = 3))  +
                             labs(x = "$x$", y = "$y$"), 
-                          y.indices[[selected.plots]], 
+                          y.indices, 
                           ncol = 2, rel_widths = c(0.73, 0.27))
 
 all.bottom.plots <- plot_grid(bratley_plots, bottom.plots, ncol = 1, labels = c("", "g"), 
@@ -719,7 +714,8 @@ plot_grid(full.plot, all.bottom.plots, ncol = 1, rel_heights = c(0.6, 0.45),
 
 rbind(discrete.dt, final.dt) %>%
   .[, .(mean = mean(value), median = median(value)), .(Function, variable)] %>%
-  .[order(-mean, variable)]
+  .[order(-mean, variable)] %>%
+  .[Function == "Bratley et al. 1992"]
 
 
 

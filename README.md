@@ -1,10 +1,13 @@
 
-# code_discrepancy
+# The use of discrepancy measures as sensitivity indices in mathematical modeling
 
-<!-- badges: start -->
-<!-- badges: end -->
+Arnald Puy and Andrea Saltelli
 
-This is a work in progress on the use of discrepancy measures for sensitivity analysis in mathematical modelling. The ``.cpp`` functions have been retrieved from the package sensitivity (Iooss et al. 2020).
+This is the ``R`` code of the report, whose abstract reads as follows:
+
+*While Sensitivity Analysis (SA) improves the transparency and reliability of mathematical models, its uptake by modelers is still scarce. This is partially explained by its technical requirements, which may be hard to decipher and interpret for the non-specialist. Here we draw on the concept of discrepancy and propose a sensitivity measure that is as easy to understand as the visual inspection of input-output scatterplots. Numerical experiments on classic SA functions and on meta-models suggest that the symmetric $L_2$ discrepancy measure is able to rank the most influential parameters almost as accurately as the variance-based total sensitivity index, one of the most established global sensitivity measures.*
+
+The ``.cpp`` functions have been retrieved from the package sensitivity (Iooss et al. 2020).
 
 ## References
 
