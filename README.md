@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6760348.svg)](https://doi.org/10.5281/zenodo.6760348)
 
 # Discrepancy measures for sensitivity analysis in mathematical modeling
 
