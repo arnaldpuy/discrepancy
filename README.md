@@ -1,5 +1,5 @@
 
-# The use of discrepancy measures as sensitivity indices in mathematical modeling
+# Discrepancy measures for sensitivity analysis in mathematical modeling
 
 Arnald Puy and Andrea Saltelli
 
