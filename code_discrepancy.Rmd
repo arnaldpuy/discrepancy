@@ -1,5 +1,5 @@
 ---
-title: "Discrepancy as a sensitivity measure in mathematical modeling"
+title: "Discrepancy measures for sensitivity analysis in mathematical modeling"
 subtitle: "R code"
 author: "Arnald Puy"
 header-includes:
