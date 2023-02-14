@@ -1,20 +1,10 @@
-## ----setup, include=FALSE-----------------------------------------------------------------
+## ----setup, include=FALSE-------------------------------------------------------------
 knitr::opts_chunk$set(echo = TRUE, dev = "tikz", cache = TRUE)
 
 
-## ---- results="hide", message=FALSE, warning=FALSE, cache=FALSE---------------------------
+## ---- results="hide", message=FALSE, warning=FALSE, cache=FALSE-----------------------
 
-# PRELIMINARY ------------------------------------------------------------------
-
-# Function to read in all required packages in one go:
-loadPackages <- function(x) {
-  for(i in x) {
-    if(!require(i, character.only = TRUE)) {
-      install.packages(i, dependencies = TRUE)
-      library(i, character.only = TRUE)
-    }
-  }
-}
+# PRELIMINARY ##################################################################
 
 theme_AP <- function() {
   theme_bw() +
@@ -23,18 +13,25 @@ theme_AP <- function() {
           legend.background = element_rect(fill = "transparent",
                                            color = NA),
           legend.margin=margin(0, 0, 0, 0),
-          legend.box.margin=margin(-7,-7,-7,-7), 
+          legend.box.margin=margin(-5,-5,-5,-5), 
           legend.key = element_rect(fill = "transparent",
                                     color = NA), 
           strip.background = element_rect(fill = "white"))
 }
 
 # Load the packages
-loadPackages(c("sensobol", "data.table", "tidyverse", "parallel", 
-               "RcppAlgos", "scales", "doParallel", "benchmarkme", 
-               "cowplot", "wesanderson", "benchmarkme"))
+sensobol::load_packages(c("sensobol", "data.table", "tidyverse", "parallel", 
+                          "RcppAlgos", "scales", "doParallel", "benchmarkme", 
+                          "cowplot", "wesanderson", "microbenchmark"))
 
-# CPP CODE ---------------------------------------------------------------------
+# CHECKPOINT -------------------------------------------------------------------
+
+dir.create(".checkpoint")
+library("checkpoint")
+
+checkpoint("2023-01-13", R.version ="4.2.1", checkpointLocation = getwd())
+
+# C++ CODE ---------------------------------------------------------------------
 
 # Source cpp code -------------------------------
 cpp_functions <- c("cpp_functions.cpp", "L2star_functions.cpp", 
@@ -46,31 +43,70 @@ for(i in 1:length(cpp_functions)) {
 }
 
 
-## ----savage_fun---------------------------------------------------------------------------
+## ----functions------------------------------------------------------------------------
 
-# SAVAGE SCORES FUNCTION -------------------------------------------------------
+# DEFINE FUNCTIONS #############################################################
 
-savage_scores <- function(x) {
-  true.ranks <- rank(-x)
+# SAVAGE SCORES ----------------------------------------------------------------
+
+savage_scores <- function(x, type) {
+  
+  if (type == "ersatz") {
+    
+    true.ranks <- rank(x)
+    
+  } else {
+    
+    true.ranks <- rank(-x)
+    
+  }
+  
   p <- sort(1 / true.ranks)
   mat <- matrix(rep(p, length(p)), nrow = length(p), byrow = TRUE)
   mat[upper.tri(mat)] <- 0
   out <- sort(rowSums(mat), decreasing = TRUE)[true.ranks]
+  
   return(out)
 }
 
+# SALTELLI ERSATZ DISCREPANCY --------------------------------------------------
 
-## ----discrepancy_fun, dependson="savage_scores"-------------------------------------------
+saltelli_ersatz <- function(mat) {
+  
+  N <- nrow(mat)
+  
+  s <- ceiling(sqrt(N))
+  
+  # Create the zero matrix
+  mat_zeroes <- matrix(0, s, s)
+  
+  # Compute index for x_i
+  m <- ceiling(mat[, 1] * s)
+  
+  # Compute index for y
+  x <- mat[, 2] 
+  n_norm <- (x-min(x))/(max(x)-min(x)) # Scale y to 0, 1
+  n <- ceiling(n_norm * s) 
+  
+  # Turn y==0 to y == 1
+  n <- ifelse(n == 0, 1, n)
+  
+  # Merge and identify which cells are occupied by points
+  ind <- cbind(m, n)
+  mat_zeroes[ind] <- 1
+  
+  # Compute discrepancy
+  out <- sum(mat_zeroes==1) / N
+  
+  return(out)
+}
 
-# DISCREPANCY FUNCTION --------------------------------------------------------
-
-# This is based on the function discrepancyCriteria_cpp of
-# the sensitivity package
+# DISCREPANCY FUNCTION WRAP-UP -------------------------------------------------
 
 # Function to rescale ---------------------------
 rescale_fun <- function(x) (x - min(x)) / (max(x) - min(x))
 
-# Function --------------------------------------
+# Wrap up function ------------------------------
 discrepancy_fun <- function (design, type) {
 
   X <- as.matrix(design)
@@ -124,25 +160,29 @@ discrepancy_fun <- function (design, type) {
     s2 <- DisM2_Crossprod(c(t(X)), dimension)
     R <- sqrt(((4/3)^dimension) - (((2^(1 - dimension))/n) * s1) + ((1/n^2) * s2))
     
+  } else if (type == "ersatz") {
+    
+    R <- saltelli_ersatz(X)
+    
   }
   return(R)
 }
 
-# Discrepancy function --------------------------
+# Final discrepancy function -----------------------
 discrepancy <- function(mat, y, params, type) {
+  
   value <- sapply(1:ncol(mat), function(j) {
     design <- cbind(mat[, j], y) 
     value <- discrepancy_fun(design = design, type = type)
+    
   })
   return(value)
 }
 
-
-## ----jansen_fun---------------------------------------------------------------------------
-
-# FUNCTION TO COMPUTE JANSEN TI ------------------------------------------------
+# FUNCTION TO COMPUTE JANSEN T_I -----------------------------------------------
 
 jansen_ti <- function(d, N, params) {
+  
   m <- matrix(d, nrow = N)
   k <- length(params)
   Y_A <- m[, 1]
@@ -150,80 +190,16 @@ jansen_ti <- function(d, N, params) {
   f0 <- (1 / length(Y_A)) * sum(Y_A)
   VY <- 1 / length(Y_A) * sum((Y_A - f0) ^ 2)
   value <- (1 / (2 * N) * Rfast::colsums((Y_A - Y_AB) ^ 2)) / VY
+  
   return(value)
 }
 
 
-## ----fun_list-----------------------------------------------------------------------------
+## ----meta_distributions---------------------------------------------------------------
 
-# LIST OF FUNCTIONS -----------------------------------------------------------
+# DISTRIBUTIONS OF THE METAFUNCTIONS ###########################################
 
-# NEW FUNCTIONS ------------------------------------
-
-f1_fun <- function(x) 10 * x[, 1] + 0.2 * x[, 2]^3
-
-f2_fun <- function(x) 2 * x[, 1] - x[, 2]^2
-
-f3_fun <- function(x) x[, 1]^2 + x[, 2]^4 + x[, 1] * x[, 2] + x[, 2] * x[, 3]^4
-
-f4_fun <- function(x) 0.2 * exp(x[, 1] - 3) + 2.2 * abs(x[, 2]) + 1.3 * x[, 2]^6 -
-  2 * x[, 2]^2 - 0.5 * x[, 2]^4 - 0.5 * x[, 1]^4 + 2.5 * x[, 1]^2 + 0.7 * x[, 1]^3 +
-  3 / ((8 * x[, 1] - 2)^2 + (5 * x[, 2] - 3)^2 + 1) + sin(5 * x[, 1]) * cos(3 * x[, 1]^2)
-
-f6_fun <- function(x) 0.2 * exp(x[, 1] + 2 * x[, 2])
-
-fun_vec <- paste("f", 1:4, "_fun", sep = "")
-
-f_list <- list(f1_fun, f2_fun, f3_fun, f4_fun)
-names(f_list) <- fun_vec
-
-# RUN FUNCTIONS ---------------------------------------------------------------
-
-output <- ind <- list()
-
-for (i in names(f_list)) {
-  
-  if(i == "f3_fun") {
-    
-    k <- 3
-    
-  } else {
-    
-    k <- 2
-  }
-  params <- paste("$x_", 1:k, "$", sep = "")
-  N <- 100
-  mat <- sobol_matrices(N = N, params = params, scrambling = 1)
-  y <- f_list[[i]](mat)
-  y <- rescale_fun(y)
-  ind[[i]] <- sobol_indices(Y = y, N = N, params = params)
-  output[[i]] <- plot_scatter(data = mat, N = N, Y = y, params = params) + 
-    labs(x = "$x$", y = "$y$") +
-    scale_x_continuous(breaks = pretty_breaks(n = 3)) +
-    scale_y_continuous(breaks = pretty_breaks(n = 3)) +
-    theme(plot.margin = unit(c(0, 0.2, 0, 0), "cm"))
-}
-
-ind
-
-
-## ----plot_fun_list, dependson="fun_list", fig.height=4, fig.width=2.5---------------------
-
-# PLOT LIST OF FUNCTIONS -------------------------------
-
-plot_list <- list(output[[1]] + labs(x = "", y = "$y$"), 
-                  output[[2]] + labs(x = "", y = "$y$"), 
-                  output[[4]])
-
-scat_plot <- plot_grid(plotlist = plot_list, ncol = 1, labels = "auto")
-scat_plot
-
-
-## ----metamodel_fun------------------------------------------------------------------------
-
-# RANDOM FUNCTIONS AND DISTRIBUTIONS ------------------------------------------
-
-# Functions ------------------------------------
+# Functions --------------------------------------------------------------------
 function_list <- list(
   Linear = function(x) x,
   Quadratic = function(x) x ^ 2,
@@ -242,7 +218,7 @@ function_list <- list(
   Oscillation = function(x) x ^ 2 - 0.2 * cos(7 * pi * x)
 )
 
-# Random distributions  -------------------------
+# Random distributions  --------------------------------------------------------
 sample_distributions <- list(
   "uniform" = function(x) x,
   "normal" = function(x) qnorm(x, 0.5, 0.15),
@@ -267,11 +243,56 @@ random_distributions <- function(X, phi) {
 }
 
 
-## ----plot_metafunction, dependson="metamodel_fun", fig.width=5.5, fig.height=3.3----------
+## ----plot_distributions, dependson="meta_distributions", fig.width=4, fig.height=2.3----
 
-# PLOT METAFUNCTION -----------------------------------------------------------
+# PLOT DISTRIBUTIONS ###########################################################
 
-ggplot(data.frame(x = runif(100)), aes(x)) +
+# Density function
+sample_distributions_PDF <- list(
+  "uniform" = function(x) dunif(x, 0, 1),
+  "normal" = function(x) dnorm(x, 0.5, 0.15),
+  "beta" = function(x) dbeta(x, 8, 2),
+  "beta2" = function(x) dbeta(x, 2, 8),
+  "beta3" = function(x) dbeta(x, 2, 0.8),
+  "beta4" = function(x) dbeta(x, 0.8, 2),
+  "logitnormal" = function(x) logitnorm::dlogitnorm(x, 0, 3.16)
+)
+
+names_ff <- names(sample_distributions)
+x <- seq(0, 1, .001)
+out <- matrix(rep(x, length(names_ff)), ncol = length(names_ff))
+
+
+dt <- data.table(sapply(seq_along(names_ff), function(x)
+  sample_distributions_PDF[[names_ff[x]]](out[, x])))
+
+dt <- setnames(dt, paste("V", 1:length(names_ff), sep = ""), names_ff) %>%
+  .[, x:= x] %>%
+  melt(., measure.vars = names_ff)
+
+plot.distributions <- ggplot(dt, aes(x = x, y = value, group = variable)) +
+  geom_line(aes(color = variable)) +
+  scale_color_discrete(labels = c("$\\mathcal{U}(0, 1)$",
+                                  "$\\mathcal{N}(0.5, 0.15)$",
+                                  "Beta(8, 2)",
+                                  "Beta(2, 8)",
+                                  "Beta(2, 0.8)",
+                                  "Beta(0.8, 2)",
+                                  "Logitnormal(0, 3.16)"),
+                       name = "Distribution") +
+  labs(x = expression(italic(x)),
+       y = "PDF") +
+  theme_AP() +
+  theme(legend.text.align = 0)
+
+plot.distributions
+
+
+## ----plot_meta_distributions, dependson="meta_distributions", fig.height=3.3, fig.width=5.7----
+
+# PLOT METAFUNCTION ############################################################
+
+plot.metafunction <- ggplot(data.frame(x = runif(100)), aes(x)) +
   map(1:length(function_list), function(nn) {
     stat_function(fun = function_list[[nn]], 
                   geom = "line", 
@@ -296,40 +317,193 @@ ggplot(data.frame(x = runif(100)), aes(x)) +
   theme_AP() + 
   theme(legend.text.align = 0)
 
+plot.metafunction
 
-## ----scatters_plot, fig.height=3, fig.width=5.5-------------------------------------------
 
-# PLOT SCATTERS FROM METAFUNCTION ---------------------------------------------
+## ----list_functions-------------------------------------------------------------------
 
-k_epsilon <- list(c(3, 2), c(12, 6))
-out <- list()
+# LIST OF FUNCTIONS ############################################################
 
-for(i in 1:length(k_epsilon)) {
-  N <- 2^9
-  params <- paste("$x_{", 1:k_epsilon[[i]][[1]], "}$", sep = "")
-  mat <- sobol_matrices(N = N, params = params)
-  y <- metafunction(mat, epsilon = k_epsilon[[i]][[2]])
-  out[[i]] <- plot_scatter(data = mat, N = N, Y = y, params = params) + 
-    scale_x_continuous(breaks = pretty_breaks(n = 3)) +
-    theme(plot.margin = unit(c(0, 0.1, 0, 0), "cm")) + 
-    labs(x = "", y = "$y$")
+# NEW FUNCTIONS ----------------------------------------------------------------
+f1_fun <- function(x) 10 * x[, 1] + 0.2 * x[, 2]^3
 
+f2_fun <- function(x) 2 * x[, 1] - x[, 2]^2
+
+f3_fun <- function(x) x[, 1]^2 + x[, 2]^4 + x[, 1] * x[, 2] + x[, 2] * x[, 3]^4
+
+f4_fun <- function(x) 0.2 * exp(x[, 1] - 3) + 2.2 * abs(x[, 2]) + 1.3 * x[, 2]^6 -
+  2 * x[, 2]^2 - 0.5 * x[, 2]^4 - 0.5 * x[, 1]^4 + 2.5 * x[, 1]^2 + 0.7 * x[, 1]^3 +
+  3 / ((8 * x[, 1] - 2)^2 + (5 * x[, 2] - 3)^2 + 1) + sin(5 * x[, 1]) * cos(3 * x[, 1]^2)
+
+f6_fun <- function(x) 0.2 * exp(x[, 1] + 2 * x[, 2])
+
+fun_vec <- paste("f", 1:4, "_fun", sep = "")
+
+f_list <- list(f1_fun, f2_fun, f3_fun, f4_fun)
+names(f_list) <- fun_vec
+
+# RUN FUNCTIONS ----------------------------------------------------------------
+output <- ind <- list()
+
+for (i in names(f_list)) {
+  
+  if(i == "f3_fun") {
+    
+    k <- 3
+    
+  } else {
+    
+    k <- 2
+  }
+  params <- paste("$x_", 1:k, "$", sep = "")
+  N <- 100
+  mat <- sobol_matrices(N = N, params = params, scrambling = 1)
+  y <- f_list[[i]](mat)
+  y <- rescale_fun(y)
+  ind[[i]] <- sobol_indices(Y = y, N = N, params = params)
+  output[[i]] <- plot_scatter(data = mat, N = N, Y = y, params = params) + 
+    labs(x = "$x$", y = "$y$") +
+    scale_x_continuous(breaks = c("0" = 0, "0.5" = 0.5, "1" = 1)) +
+    scale_y_continuous(breaks = c("0" = 0, "0.5" = 0.5, "1" = 1)) +
+    theme(plot.margin = unit(c(0, 0.2, 0, 0), "cm"))
 }
 
-scatters_plot <- plot_grid(out[[1]] + facet_wrap(~variable, ncol = 1), 
-          out[[2]] + facet_wrap(~variable, ncol = 4) + labs(y = ""), 
-          ncol = 2, labels = "auto", rel_widths = c(0.24, 0.76))
-
-scatters_plot
+ind
 
 
-## ----model_fun, dependson=c("metamodel_fun", "savage_fun", "discrepancy_fun", "jansen_fun")----
+## ----plot_list_functions, dependson="list_functions", fig.height=3.7, fig.width=2.5----
 
-# DEFINE MODEL -----------------------------------------------------------------
+# PLOT LIST OF FUNCTIONS #######################################################
+
+plot_list <- list(output[[1]] + labs(x = "", y = "$y$"), 
+                  output[[2]] + labs(x = "", y = "$y$"), 
+                  output[[4]])
+
+scat_plot <- plot_grid(plotlist = plot_list, ncol = 1, labels = "auto")
+scat_plot
+
+
+## ----plot_list_functions2, dependson="list_functions", fig.height=1.2, fig.width=6----
+
+# PLOT LIST OF FUNCTIONS #######################################################
+
+plot_list <- list(output[[1]] + labs(x = "$x$", y = "$y$"), 
+                  output[[2]] + labs(x = "$x$", y = ""), 
+                  output[[4]] + labs(x = "$x$", y = ""))
+
+scat_plot <- plot_grid(plotlist = plot_list, ncol = 3, labels = "auto")
+scat_plot
+
+
+## ----plot_sampling_fun----------------------------------------------------------------
+
+# FUNCTION TO DRAW SAMPLING POINTS IN GRID #####################################
+
+plot_grid_fun <- function(N, type, output = "plot") {
+  
+  set.seed(2)
+  mat <- sobol_matrices(N = N, params = paste("$x_", 1:2, "$", sep = ""), 
+                        matrices = "A", type = type)
+  
+  n.ersatz <- saltelli_ersatz(mat)
+  
+  s <- ceiling(sqrt(N))
+  
+  out <- mat %>%
+    data.table() %>%
+    ggplot(., aes(`$x_1$`, `$x_2$`)) +
+    geom_point(color = "red") +
+    theme_bw() + 
+    labs(x = "$x$", y = "$y$") +
+    scale_x_continuous(breaks = seq(0, 1, 1/s), expand = c(0, 0), limits = c(0,1)) +
+    scale_y_continuous(breaks = seq(0, 1, 1/s), expand = c(0, 0), limits = c(0,1)) +
+    theme(panel.grid.minor.x = element_blank(), 
+          panel.grid.minor.y = element_blank(), 
+          axis.ticks = element_blank(), 
+          axis.text = element_blank(), 
+          plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"))
+  
+  if (output == "plot") {
+    
+    return(out)
+    
+  } else {
+    
+    return(n.ersatz)
+  }
+  
+}
+
+
+## ----plot_sampling, dependson="plot_sampling_fun", fig.height=2.5, fig.width=3.4------
+
+# PLOT #########################################################################
+
+# Define loop ------------------------------------------------------------------
+type <- c("R", "QRN")
+N <- 2^seq(2, 6, 2)
+
+# Plot -------------------------------------------------------------------------
+pt <- lapply(type, function(type) lapply(N, function(N) plot_grid_fun(N = N, type = type)))
+out <- list()
+
+for (i in 1:length(type)) {
+    out[[i]] <- plot_grid(plotlist = pt[[i]], ncol = length(N), labels = "")
+}
+  
+all.grids <- plot_grid(out[[1]], out[[2]], ncol = 1, labels = "auto")
+all.grids
+
+
+## ----extract_ersatz, fig.height=2.5, fig.width=2.5------------------------------------
+
+# EXTRACT ERSATZ MEASURE #######################################################
+
+N <- 2^seq(2, 14, 2)
+
+ersatz.measure <- lapply(type, function(type) lapply(N, function(N) 
+  plot_grid_fun(N = N, type = type, output = "ersatz")))
+
+col_names <- c("Random", "QRN")
+dt.ersatz <- data.table(do.call(cbind, ersatz.measure))
+dt.ersatz <- setnames(dt.ersatz, paste("V", 1:2, sep = ""), col_names)
+dt.ersatz <- dt.ersatz[, sample.size:= N]
+
+dt.ersatz[, (col_names):= lapply(.SD, as.numeric), .SDcols = (col_names)]
+
+plot.ersatz <- melt(dt.ersatz, measure.vars = c("Random", "QRN")) %>%
+  ggplot(., aes(sample.size, value, color = variable, group = variable)) +
+  geom_line() + 
+  scale_x_log10() +
+  labs(x = "$N_s$", y = "S-ersatz value") +
+  scale_color_discrete(name = "Sampling") +
+  theme_AP() + 
+  theme(legend.position = c(0.7, 0.35))
+
+plot.ersatz
+
+
+## ----merge_plots_ersatz, dependson=c("extract_ersatz", "plot_sampling"), fig.width=6, fig.height=2.5----
+
+plot_grid(all.grids, plot.ersatz, ncol = 2, labels = c("", "c"), 
+          rel_widths = c(0.6, 0.4))
+
+
+## ----model, dependson=c("functions", "meta_distributions")----------------------------
+
+# DEFINE MODEL #################################################################
 
 model_fun <- function(tau, epsilon, base.sample.size, cost.discrepancy, phi, k) {
   
   params <- paste("X", 1:k, sep = "")
+  
+  # Define vectors to loop through --------------------------------------------
+  
+  simulations <- c("discrepancy", "jansen")
+  disc.type <- c("symmetric", "star", "L2", "centered", "wraparound", 
+                 "modified", "ersatz")
+  
+  # Select the sampling method -------------------------------------------------
   
   if (tau == 1) {
     
@@ -339,67 +513,124 @@ model_fun <- function(tau, epsilon, base.sample.size, cost.discrepancy, phi, k) 
     
     type <- "QRN"
   }
-  set.seed(epsilon)
-  discrepancy.mat <- sobol_matrices(matrices = "A", N = cost.discrepancy, 
-                                    params = params, 
+  
+  # If statements to select matrices and N as a function
+  # of the estimator used -----------------------------------------------------
+  
+  mat <- y <- ind <- disc <- output <-  jansen.results <- list()
+  
+  for (i in simulations) {
+    
+    if (i == "discrepancy") {
+      
+      matrices <- "A"
+      N <- cost.discrepancy
+      
+    } else if (i == "jansen") {
+      matrices <- c("A", "AB") 
+      N <- base.sample.size
+      
+    }
+    
+    # Construct the sample matrix, randomly transform it
+    # according to phi and run the metafunction -------------------------------
+    
+    if (i == "discrepancy") {
+      
+      set.seed(epsilon)
+      mat.uniform <- sobol_matrices(matrices = matrices, N = N, params = params, 
                                     type = type)
-  
-  set.seed(epsilon)
-  jansen.mat <- sobol_matrices(matrices = c("A", "AB"), N = base.sample.size, 
-                               params = params, 
-                               type = type)
-  
-  all.matrices <- rbind(discrepancy.mat, jansen.mat)
-  set.seed(epsilon)
-  transformed.all.matrices <- random_distributions(X = all.matrices, phi = phi)
-  
-  y <- sensobol::metafunction(data = transformed.all.matrices, epsilon = epsilon)
-  
-  type <- c("symmetric", "star", "L2", "centered", "wraparound", "modified")
-  
-  discrepancy.value <- lapply(type, function(x) 
-    discrepancy(mat = all.matrices[1:cost.discrepancy, ], 
-                y = y[1:cost.discrepancy], params = params, type = x))
+      
+      set.seed(epsilon)
+      mat[[i]] <- random_distributions(sobol_matrices(matrices = matrices, 
+                                                      N = N, params = params, 
+                                                      type = type), phi = phi)
+      
+    } else if (i == "jansen") {
+      
+      set.seed(epsilon)
+      mat[[i]] <- random_distributions(sobol_matrices(matrices = matrices, 
+                                                      N = N, params = params, 
+                                                      type = type), phi = phi)
+    }
     
-  
-  jansen.value <- jansen_ti(d = y[(cost.discrepancy + 1):length(y)],
-                            N = base.sample.size, params = params)
-  
-  savage.discrepancy <- lapply(discrepancy.value, savage_scores)
-  jansen.discrepancy <- savage_scores(jansen.value)
-  
-  out <- lapply(savage.discrepancy, function(x) 
-    cor(x, jansen.discrepancy))
+    set.seed(epsilon)
+    y[[i]] <- sensobol::metafunction(data = mat[[i]], epsilon = epsilon)
     
-  return(out)
+    # Calculate first (saltelli) and total order (jansen) indices 
+    # and discrepancy values --------------------------------------------------
+    
+    if (i == "jansen") {
+      
+      ind[[i]] <- jansen_ti(d = y[[i]], N = base.sample.size, params = params)
+      
+    } 
+    
+    if (i == "discrepancy") {
+      
+      discrepancy.val <- lapply(disc.type, function(x) 
+        discrepancy(mat = mat.uniform, y = y[[i]], params = params, type = x))
+    }
+  }
+
+  # Arrange output -------------------------------------------------------------
+    
+  names(discrepancy.val) <- disc.type
+  all.simulations <- c(ind, discrepancy.val)
+    
+  # Savage scores --------------------------------------------------------------
+    
+  all.simulations.savage <- list()
+  
+  for (i in names(all.simulations)) {
+    
+    all.simulations.savage[[i]] <- savage_scores(all.simulations[[i]], type = i)
+  }
+  
+  # Correlation between indices and discrepancy measures -----------------------
+    
+  for (i in disc.type) {
+      
+    jansen.results[[i]] <- cor(all.simulations.savage$jansen, all.simulations.savage[[i]])
+      
+  }
+  
+  # Arrange output -------------------------------------------------------------
+    
+  output <- unlist(jansen.results)
+    
+  return(output)
+  
 }
 
 
-## ----matrix-------------------------------------------------------------------------------
+## ----sample_matrix, dependson="model"-------------------------------------------------
 
-# CREATE SAMPLE MATRIX --------------------------------------------------------
+# CREATE SAMPLE MATRIX #########################################################
 
-N <- 2^10
+# DEFINE SETTINGS --------------------------------------------------------------
+N <- 2^9
 params <- c("epsilon", "phi", "k", "tau", "base.sample.size")
 mat <- sobol_matrices(matrices = "A", N = N, params = params)
 
-# Define distributions --------------------------
-
+# DEFINE DISTRIBUTIONS ---------------------------------------------------------
 mat[, "epsilon"] <- floor(qunif(mat[, "epsilon"], 1, 200))
 mat[, "phi"] <- floor(mat[, "phi"] * 8) + 1
 mat[, "k"] <- floor(qunif(mat[, "k"], 3, 50))
 mat[, "tau"] <- floor(mat[, "tau"] * 2) + 1
 mat[, "base.sample.size"] <- floor(qunif(mat[, "base.sample.size"], 10, 100))
 
+# RE-ARRANGE COST OF ANALYSIS --------------------------------------------------
 cost.jansen <- mat[, "base.sample.size"] * (mat[, "k"] + 1)
+cost.saltelli <- mat[, "base.sample.size"] * (mat[, "k"] + 2)
 cost.discrepancy <- cost.jansen
 
-final.mat <- cbind(mat, cost.jansen, cost.discrepancy)
+final.mat <- cbind(mat, cost.jansen, cost.saltelli, cost.discrepancy)
 
 
-## ----run_model_fun, dependson=c("model_fun", "matrix")------------------------------------
+## ----run_model, dependson="sample_matrix"---------------------------------------------
 
-# RUN MODEL  -----------------------------------------------------------------
+# RUN SIMULATIONS ##############################################################
 
 y <- mclapply(1:nrow(final.mat), function(i) {
   model_fun(tau = final.mat[i, "tau"],
@@ -411,318 +642,262 @@ y <- mclapply(1:nrow(final.mat), function(i) {
   mc.cores = floor(detectCores() * 0.75))
 
 
-## ----arrange_output, dependson=c("run_model_fun", "matrix")-------------------------------
+## ----arrange_output, dependson="run_model"--------------------------------------------
 
-# ARRANGE DATA ----------------------------------------------------------------
+# ARRANGE OUTPUT ###############################################################
 
-y <- lapply(y, unlist)
-output <- data.table(do.call(rbind, y))
-discrepancy_methods <- c("symmetric", "star", "L2", "centered", 
-                         "wraparound", "modified")
-colnames(output) <- discrepancy_methods
+final.dt <- do.call(rbind, y) %>%
+  cbind(final.mat, .) %>%
+  data.table()
 
-final.output <- data.table(cbind(final.mat, output))
+# EXPORT RESULTS ---------------------------------------------------------------
+fwrite(final.dt, "final.dt.csv")
 
-# Write model output
-fwrite(final.output, "final.output.csv")
+## ----plot_output, dependson="arrange_output", warning = FALSE, fig.height=2, fig.width=6----
 
+# PLOT #########################################################################
 
-## ----discretization_fun, dependson = c("jansen_fun", "discrepancy_fun", "savage_fun")-----
+disc.type <- c("symmetric", "star", "L2", "centered", 
+               "wraparound", "modified", "ersatz")
 
-# DISCRETIZATION FUNCTIONS -----------------------------------------------------
-
-plot_ti <- function(ind, params) {
-  
-  out <- data.table(ind) %>%
-    .[, parameters:= params] %>%
-    ggplot(., aes(parameters, ind)) +
-    geom_bar(stat = "identity", fill = "#00BFC4", color = "black") + 
-    labs(x = "", y = "$T_i$") +
-    theme_AP()
-  
-  return(out)
-}
-
-# FUNCTION TO DISCRETIZE THE BRATLEY ET AL. FUNCTION --------------------------
-
-discretization_fun <- function(N, k, epsilon, plot.scatterplot = FALSE, 
-                               plot.jansen = FALSE, savage.scores = TRUE) {
-
-  params <- paste("$x_", 1:k, "$", sep = "")
-  mat <- sobol_matrices(N = N, params = params, matrices = c("A", "AB"))
-  mat2 <- mat # mat2 = matrix for discretization
-  
-  # Determine how many parameters to discretize (n.discrete), 
-  # which parameters to discretize (n.parameters), and the 
-  # number of levels (n.levels)
-  set.seed(epsilon)
-  n.discrete <- sample(1:ceiling(k / 2), size = 1)
-  set.seed(epsilon)
-  n.parameters <- sample(1:k, size = n.discrete)
-  set.seed(epsilon)
-  n.levels <- sample(2:5, size = 1)
-  
-  # Discretization of the sampled parameters
-  mat2[, n.parameters] <- floor(mat2[, n.parameters] * n.levels) + 1
-  
-  # Compute output and sobol indices (Jansen estimator)
-  y <- bratley1992_Fun(mat2)
-  ind2 <- jansen_ti(d = y, N = N, params = params)
-  
-  # Conditional
-  if (plot.scatterplot == TRUE) {
-    out <- plot_scatter(data = mat2, N = N, Y = y, params = params)
-  } 
-  if (plot.jansen == TRUE) {
-    out <- plot_ti(ind = ind2, params = params)
-  }
-  if(savage.scores == TRUE) {
-    sobol_ranks <- savage_scores(ind2)
-    
-    # Compute discrepancy
-    type <- c("symmetric", "star", "L2", "centered", "wraparound", "modified")
-    discrepancy.out <- lapply(type, function(x) 
-      discrepancy(mat = mat[1:N, ], y = y[1:N], params = params, type = x))
-    
-    discrepancy.ranks <- lapply(discrepancy.out, savage_scores)
-    # Correlation on savage scores
-    out <- lapply(discrepancy.ranks, function(x) cor(sobol_ranks, x))
-  }
-  return(out)
-}
-
-
-## ----discrete_sims, dependson=c("jansen_fun", "discrepancy_fun", "savage_fun", "discretization_fun")----
-
-# CREATE SAMPLE MATRIX -------------------------------------------------------
-
-N <- 2^9
-params <- c("k", "epsilon")
-mat <- sobol_matrices(matrices = "A", N = N, params = params)
-
-# Define distributions --------------------------
-
-mat[, "epsilon"] <- floor(qunif(mat[, "epsilon"], 1, N))
-mat[, "k"] <- floor(qunif(mat[, "k"], 6, 50))
-
-# RUN MODEL --------------------------------------------------------------------
-
-y.discrete <- mclapply(1:nrow(mat), function(i) {
-  discretization_fun(N = 2^12,
-                     k = mat[i, "k"],
-                     epsilon = mat[i, "epsilon"], 
-                     plot.scatterplot = FALSE, 
-                     plot.jansen = FALSE, 
-                     savage.scores = TRUE)}, 
-  mc.cores = floor(detectCores() * 0.75))
-
-
-## ----arrange_discrete, dependson="discrete_sims"------------------------------------------
-
-# ARRANGE OUTPUT --------------------------------------------------------------
-
-y.discrete <- lapply(y.discrete, unlist)
-output <- data.table(do.call(rbind, y.discrete))
-discrepancy_methods <- c("symmetric", "star", "L2", "centered", 
-                         "wraparound", "modified")
-colnames(output) <- discrepancy_methods
-
-final.output.discrete <- data.table(cbind(mat, output))
-
-melt(final.output.discrete, measure.vars = discrepancy_methods) %>%
-  .[, .(mean = mean(value, na.rm = TRUE), 
-        median = median(value, na.rm = TRUE)), variable] %>%
-  .[order(-median)]
-
-
-## ----export_output_discrete, dependson="arrange_discrete"---------------------------------
-
-# EXPORT OUTPUT DISCRETE -----------------------------------------------------
-
-fwrite(final.output.discrete, "final.output.discrete.csv")
-
-
-## ----discretization_scatter, dependson="discrete_sims"------------------------------------
-
-# RUN MODEL TO GET SCATTERPLOTS ---------------------------------------------
-
-N.scatter <- 2^6
-N.indices <- 2^10
-row.selected <- 63
-
-y.scatters <- discretization_fun(N = N.scatter,
-                                k = mat[row.selected, "k"],
-                                epsilon = mat[i, "epsilon"], 
-                                plot.scatterplot = TRUE, 
-                                plot.jansen = FALSE, 
-                                savage.scores = FALSE)
-
-# RUN MODEL TO GET JANSEN TI -------------------------------------------------
-
-y.indices <- discretization_fun(N = N.indices,
-                     k = mat[row.selected, "k"],
-                     epsilon = mat[i, "epsilon"], 
-                     plot.scatterplot = FALSE, 
-                     plot.jansen = TRUE, 
-                     savage.scores = FALSE)
-
-
-## ----bratley_fun, dependson="discrepancy_fun", fig.height=1.3, fig.width=6.4--------------
-
-# PLOT ORIGINAL BRATLEY ET AL. FUNCTION --------------------------------------
-
-# Settings -----------------------------
-N <- 2^6
-k <- 6
-params <- paste("$x_", 1:k,"$", sep = "")
-matrices <- c("A", "AB")
-
-# Compute -----------------------------
-mat <- sobol_matrices(N = N, params = params, matrices = matrices)
-y <- bratley1992_Fun(mat)
-ind <- jansen_ti(d = y, N = N, params = params)
-
-# Plot scatter -------------------------
-bratley_scatter <- plot_scatter(data = mat, N = N, Y = y, params = params) +
-  scale_x_continuous(breaks = pretty_breaks(n = 3)) + 
-  scale_y_continuous(breaks = pretty_breaks(n = 3)) + 
-  facet_wrap(~variable, ncol = 6) +
-  labs(x = "$x$", y = "$y$") +
-  theme(plot.margin = unit(c(0, 0.1, 0, 0), "cm"))
-
-# Plot Ti -----------------------------
-bratley_ti <- plot_ti(ind = ind, params = params) + 
-  theme(plot.margin = unit(c(0, 0.1, 0, 0), "cm")) + 
-  labs(x = "", y = "$T_i$") +
-  scale_x_discrete(guide = guide_axis(n.dodge = 1))
-
-# Merge -------------------------------
-bratley_plots <- plot_grid(bratley_scatter, bratley_ti, labels = c("f", ""),
-                           ncol = 2, rel_widths = c(0.73, 0.27))
-bratley_plots
-
-
-## ----merged_plots_all, dependson=c("bratley_fun", "uncertainty_plots2"), fig.height=5.6, fig.width=6.4, warning=FALSE----
-
-# PLOT BRATLEY ET AL. DISCRETIZED --------------------------------------------
-
-bottom.plots <- plot_grid(y.scatters + 
-                            facet_wrap(~variable, ncol = 6 ,scales = "free_x") + 
-                            scale_x_continuous(breaks = pretty_breaks(n = 3)) + 
-                            scale_y_continuous(breaks = pretty_breaks(n = 3))  +
-                            labs(x = "$x$", y = "$y$"), 
-                          y.indices, 
-                          ncol = 2, rel_widths = c(0.73, 0.27))
-
-all.bottom.plots <- plot_grid(bratley_plots, bottom.plots, ncol = 1, labels = c("", "g"), 
-                              rel_heights = c(0.47, 0.53))
-all.bottom.plots
-
-
-## ----plot_uncertainty, dependson=c("run_model_fun", "arrange_output"), warning = FALSE, fig.height=3, fig.width=3----
-
-# PLOT UNCERTAINTY ----------------------------------------------------------
-
-
-# SCATTERPLOT ----------------------------------
-
-supp.labs <- c("Symmetric", "Star", "$L_2$", "Centered", "Wrap-around", "Modified")
-names(supp.labs) <- discrepancy_methods
-
-# SCATTERPLOT -----------------------------------
-
-a <- melt(final.output, measure.vars = discrepancy_methods) %>%
-  .[, variable:= factor(variable, levels =   c("symmetric", "wraparound", 
-                                               "centered", "L2",
-                                               "star","modified"))] %>%
-  ggplot(., aes(cost.discrepancy, k, color = value)) + 
-  geom_point(size = 0.4) + 
+# SCATTERPLOT ------------------------------------------------------------------
+scatter <- melt(final.dt, measure.vars = disc.type) %>%
+  ggplot(., aes(cost.discrepancy, k, color = value)) +
+  geom_point(size = 0.6) + 
   scale_colour_gradientn(colours = c("black", "purple", "red", "orange", 
                                      "yellow", "lightgreen"), 
                          name = expression(italic(r)), 
                          breaks = pretty_breaks(n = 3)) +
-  scale_x_continuous(breaks = pretty_breaks(n = 3)) +
-  scale_y_continuous(breaks = pretty_breaks(n = 3)) +
-  labs(x = "Nº of model runs", y = "$d$") + 
-  facet_wrap(~variable, ncol = 6, labeller = labeller(variable = supp.labs)) +
+  facet_grid(~variable) + 
+  labs(x = "Nº of model runs", y = "$d$") +
+  scale_x_continuous(breaks = pretty_breaks(n = 3)) + 
   theme_AP() + 
-  theme(legend.position = "none", 
-        strip.background = element_rect(fill = "white"), 
-        strip.text.x = element_text(size = 8))
+  theme(legend.position = "none")
 
-# BOXPLOTS --------------------------------------
 
-discrete.dt <- melt(final.output.discrete, measure.vars = discrepancy_methods) %>%
-  .[, Function:= "Bratley et al. 1992"] %>%
-  .[, .(variable, value, Function)]
 
-final.dt <- melt(final.output, measure.vars = discrepancy_methods) %>%
-  .[, Function:= "Meta-model"] %>%
-  .[, .(variable, value, Function)]
 
-b <- rbind(discrete.dt, final.dt) %>%
-  ggplot(., aes(reorder(variable, -value), value, fill = Function)) +
-  geom_boxplot(outlier.size = 0.5) + 
-  scale_x_discrete(labels = supp.labs) +
-  scale_fill_manual(values = wes_palette(2, name = "Chevalier1")) +
-  labs(x = "", y = "$r$") + 
+melt(final.dt, measure.vars = disc.type) %>%
+  ggplot(., aes(cost.discrepancy, value)) +
+  geom_point(alpha = 0.2) + 
+  labs(x = "$d$", y = "$r$") +
+  geom_smooth() +
+  scale_x_continuous(breaks = pretty_breaks(n = 3)) +
+  facet_wrap(~variable, ncol = 7) +
+  theme_AP()
+  
+
+legend <- get_legend(scatter + theme(legend.position = "top"))
+
+scatter.plot <- plot_grid(legend, scatter, ncol = 1, rel_heights = c(0.19, 0.81))
+scatter.plot
+
+# BOXPLOT ----------------------------------------------------------------------
+boxplots <-  melt(final.dt, measure.vars = disc.type) %>%
+  ggplot(., aes(reorder(variable, value), value)) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(y = "$r$", x = "") +
+  scale_y_continuous(breaks = pretty_breaks(n = 3)) +
+  theme_AP()
+
+boxplots
+
+
+## ----computing_time, dependson="plot_output"------------------------------------------
+
+####### COMPUTING TIME #########################################################
+
+# SAMPLE SIZE-------------------------------------------------------------------
+
+N <- 2^9
+params <- c("N", "k")
+
+# SAMPLE MATRIX ---------------------------------------------------------------- 
+
+dt <- sobol_matrices(matrices = "A", N = N, params = params)
+dt[, 1] <- floor(qunif(dt[, 1], 10, 10^3 + 1))
+dt[, 2] <- floor(qunif(dt[, 2], 3, 50))
+
+# RUN SIMULATIONS -------------------------------------------------------------
+
+y <- mclapply(1:nrow(dt), function(i) {
+  
+  params <- paste("x", 1:dt[i, "k"], sep = "")
+  N <- dt[i, "N"]
+  
+  output[[i]] <- lapply(disc.type, function(x) { 
+    
+    mat <- sobol_matrices(matrices = "A", N = N, params = params)
+    y <- metafunction(data = mat)
+    da <- microbenchmark(discrepancy(mat = mat, y = y, params = params, type = x), 
+                         times = 1)$time
+    
+  })
+
+}, mc.cores = detectCores())
+
+
+## ----arrange_timing, dependson="computing_time"---------------------------------------
+
+# ARRANGE DATA #################################################################
+
+da <- list()
+
+for (i in 1:length(y)) {
+  
+  names(y[[i]]) <- disc.type
+  da[[i]] <- data.frame(do.call(rbind, y[[i]])) %>%
+    rownames_to_column(., var = "discrepancy") %>%
+    data.table() %>%
+    setnames(., colnames(.), c("discrepancy", "time")) %>%
+    .[, time:= time / 10^6] # From nano to milliseconds
+
+}
+
+timing.dt <- rbindlist(da, idcol = "row")
+fwrite(timing.dt, "timing.dt.csv")
+fwrite(dt, "dt.csv")
+
+
+## ----plot_timing, dependson="arrange_timing", fig.height=2, fig.width=6, warning=FALSE----
+
+# PLOT RESULTS #################################################################
+
+# SCATTERPLOT ------------------------------------------------------------------
+scatter.timing <- dcast(timing.dt, row ~ discrepancy, value.var = "time") %>%
+  cbind(dt, .) %>%
+  melt(., measure.vars = disc.type) %>%
+  ggplot(., aes(N, k, color = value)) +
+  geom_point(size = 0.8) + 
+  scico::scale_colour_scico(palette = "lajolla", 
+                            breaks = c(1, 10^2, 10^4), 
+                            trans = "log", 
+                            name = "Time \n (Milliseconds)") +
+  facet_grid(~variable) +
+  scale_x_continuous(breaks = pretty_breaks(n = 3)) +
+  labs(x = "Nº of model runs", y = "$d$") +
   theme_AP() +
-  theme(legend.position = "none",
-        plot.margin = unit(c(0, 0.1, 0, 0), "cm"))
+  theme(legend.position = "none")
+  
+legend <- get_legend(scatter.timing + theme(legend.position = "top"))
+  
+time.plot <- plot_grid(legend, scatter.timing, ncol = 1, rel_heights = c(0.19, 0.81))
+
+# BOXPLOT ----------------------------------------------------------------------
+boxplot.timing <- ggplot(timing.dt, aes(reorder(discrepancy, time), time)) +
+  geom_boxplot() +
+  coord_flip() + 
+  labs(x = "", y = "Time (milliseconds)") +
+  scale_y_log10() +
+  theme_AP()
+
+boxplot.timing
 
 
+## ----merge_plots, dependson=c("plot_output", "plot_timing"), fig.height=4, fig.width=6, warning=FALSE----
 
-## ----plot_scatter, dependson="plot_uncertainty", fig.height=4, fig.width=5, warning = FALSE----
+# MERGE PLOTS ##################################################################
 
-# PLOT SCATTERPLOT -----------------------------------------------------------
-
-a
-
-
-
-## ----plot_boxplots, dependson="plot_uncertainty", fig.height=2, fig.width=5---------------
-
-# PLOT BOXPLOTS ---------------------------------------------------------------
-
-b
+all.scatter <- plot_grid(scatter.plot, time.plot, ncol = 1, labels = "auto")
+all.scatter
 
 
-## ----merged_plots_all2, dependson=c("merge_plots", "bratley_fun", "uncertainty_plots2", "merged_plots_all", "plot_uncertainty", "plot_fun_list"), fig.height=6.6, fig.width=6.4, warning=FALSE----
+## ----all_boxplots, dependson=c("plot_timing", "plot_output"), fig.height=3, fig.width=6, warning=FALSE----
 
-# MERGE ALL PLOTS ------------------------------------------------------------
+# PLOT BOXPLOTS ################################################################
 
-legend <- get_legend(a + theme(legend.position = "top", 
-                               legend.margin=margin(0, 0, 0, 0),
-                               legend.box.margin=margin(-7,-7,-7,-7)))
-
-legend.boxplot <- get_legend(b + theme(legend.position = "top", 
-                               legend.margin=margin(0, 0, 0, 0),
-                               legend.box.margin=margin(-7,-7,-7,-7)))
-
-boxplots.plot <- plot_grid(legend.boxplot, b, ncol = 1, rel_heights = c(0.15, 0.85), 
-                           labels = c("e", ""))
-scatters.plot <- plot_grid(legend, a, ncol = 1, rel_heights = c(0.18, 0.82), 
-                           labels = c("d", ""))
-da <- plot_grid(scatters.plot, boxplots.plot, ncol = 1, rel_heights = c(0.55, 0.45))
-
-full.plot <- plot_grid(scat_plot, da, ncol = 2, rel_widths = c(0.25, 0.75))
-full.plot
-
-plot_grid(full.plot, all.bottom.plots, ncol = 1, rel_heights = c(0.6, 0.45), 
-          labels = c("", ""))
+all.boxplots <- plot_grid(boxplots, boxplot.timing, ncol = 2, labels = c("c", "d"))
+all.boxplots 
 
 
+## ----merge_scatter_box, dependson=c("all_boxplots", "merge_plots"), fig.height=5.8, fig.width=6, warning=FALSE----
 
-## ----statistics, dependson=c("arrange_output", "arrange_discrete")------------------------
-
-# STATISTICS -----------------------------------------------------------------
-
-rbind(discrete.dt, final.dt) %>%
-  .[, .(mean = mean(value), median = median(value)), .(Function, variable)] %>%
-  .[order(-mean, variable)]
+plot_grid(all.scatter, all.boxplots, ncol = 1, rel_heights = c(0.7, 0.3))
 
 
-## ----session_information------------------------------------------------------------------
+## ----time_complexity------------------------------------------------------------------
+
+# CALCULATE TIME COMPLEXITY ####################################################
+
+# Setting ----------------------------------------------------------------------
+sample.size <- seq(100, 5000, 10)
+dimensions <- seq(3, 100, 1)
+
+# Function ---------------------------------------------------------------------
+timing_fun <- function(N, k) {
+  
+  params <- paste("X", 1:k, sep = "")
+  mat <- sobol_matrices(matrices = "A", N = N, params = params)
+  y <- metafunction(mat)
+  out <- lapply(disc.type, function(x) 
+    microbenchmark(discrepancy(mat = mat, y = y, params = params, type = x), 
+                   times = 1)$time)
+  names(out) <- disc.type
+  
+  return(out)
+}
+
+# Run model --------------------------------------------------------------------
+timing.N <- mclapply(sample.size, function(N) 
+  timing_fun(N = N, k = 5), mc.cores = detectCores())
+
+timing.dimensions <- mclapply(dimensions, function(k) 
+  timing_fun(N = 500, k = k), mc.cores = detectCores())
+
+
+## ----arrange_time_complexity, dependson="time_complexity"-----------------------------
+
+# ARRANGE RESULTS ##############################################################
+
+names(timing.N) <- sample.size
+names(timing.dimensions) <- dimensions
+
+timing.N.dt <- lapply(timing.N, function(x) lapply(x, function(y) data.table(y))) %>%
+  lapply(., function(x) rbindlist(x, idcol = "Discrepancy")) %>%
+  rbindlist(., idcol = "approach") %>%
+  .[, approach:= as.numeric(approach)] %>%
+  .[, method:= "$N_s$"] %>%
+  .[, y:= y / 10^6]
+
+timing.dimensions.dt <- lapply(timing.dimensions, function(x) lapply(x, function(y) data.table(y))) %>%
+  lapply(., function(x) rbindlist(x, idcol = "Discrepancy")) %>%
+  rbindlist(., idcol = "approach") %>%
+  .[, approach:= as.numeric(approach)] %>%
+  .[, method:= "$d$"] %>%
+  .[, y:= y / 10^6]
+
+full.timing.dt <- rbind(timing.N.dt, timing.dimensions.dt)
+
+fwrite(full.timing.dt, "full.timing.dt.csv")
+
+## ----plot_time_complexity, dependson="arrange_time_complexity", fig.height=3, fig.width=6----
+
+# PLOT RESULTS #################################################################
+
+time.complexity <- ggplot(full.timing.dt, aes(approach, y, 
+                                              group = Discrepancy, 
+                                              color = Discrepancy)) +
+  geom_line() + 
+  theme_AP() + 
+  facet_wrap(~method, scales = "free_x") +
+  labs(x = "", y = "Time (milliseconds)") +
+  theme(legend.position = c(0.2, 0.65), 
+        legend.key.width = unit(0.4, "cm"),
+        legend.key.height = unit(0.4, "cm"))
+
+time.complexity
+
+
+ggplot(timing.dimensions.dt, aes(approach, y, group = Discrepancy, color = Discrepancy)) +
+  geom_line() + 
+  theme_AP() + 
+  labs(x = "$N_s$", y = "Time (milliseconds)") +
+  theme(legend.position = c(0.2, 0.65), 
+        legend.key.width = unit(0.4, "cm"),
+        legend.key.height = unit(0.4, "cm"))
+
+## ----session_information--------------------------------------------------------------
 
 # SESSION INFORMATION ##########################################################
 

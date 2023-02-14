@@ -1,12 +1,12 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6760348.svg)](https://doi.org/10.5281/zenodo.6760348)
 
-# Discrepancy measures for sensitivity analysis in mathematical modeling
+# Discrepancy measures for sensitivity analysis
 
-Arnald Puy and Andrea Saltelli
+Arnald Puy, Pamphile Roy and Andrea Saltelli
 
 This is the ``R`` code of the report, whose abstract reads as follows:
 
-*While Sensitivity Analysis (SA) improves the transparency and reliability of mathematical models, its uptake by modelers is still scarce. This is partially explained by its technical requirements, which may be hard to decipher and interpret for the non-specialist. Here we draw on the concept of discrepancy and propose a sensitivity measure that is as easy to understand as the visual inspection of input-output scatterplots. Numerical experiments on classic SA functions and on meta-models suggest that the symmetric $L_2$ discrepancy measure is able to rank the most influential parameters almost as accurately as the variance-based total sensitivity index, one of the most established global sensitivity measures.*
+*While sensitivity analysis improves the transparency and reliability of mathematical models, its uptake by modelers is still scarce. This is partially explained by its technical requirements, which may be hard to decipher and interpret for the non-specialist. Here we propose a sensitivity analysis approach based on the concept of discrepancy that is as easy to understand as the visual inspection of input-output scatterplots. Firstly, we show that some discrepancy measures are able to rank the most influential parameters of a model almost as accurately as the variance-based total sensitivity index. We then introduce an ersatz-discrepancy whose performance as a sensitivity measure matches that of the best-performing discrepancy algorithms, is orders of magnitude faster, simple to implement and much easier to interpret.*
 
 The ``.cpp`` functions have been retrieved from the package sensitivity (Iooss et al. 2020).
 
