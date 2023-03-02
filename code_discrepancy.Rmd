@@ -260,16 +260,51 @@ function_list <- list(
   Oscillation = function(x) x ^ 2 - 0.2 * cos(7 * pi * x)
 )
 
+# Truncated distributions ------------------------------
+truncated_normal <- function(x, min, max, mean, sd) {
+  
+  a <- pnorm(min, mean, sd)
+  b <- pnorm(max, mean, sd)
+  
+  uniform <- qunif(x, a, b)
+  out <- qnorm(uniform, mean, sd)
+  
+  return(out)
+}
+
+truncated_beta <- function(x, min, max, shape1, shape2) {
+  
+  a <- pbeta(min, shape1, shape2)
+  b <- pbeta(max, shape1, shape2)
+  
+  uniform <- qunif(x, a, b)
+  out <- qbeta(uniform, shape1, shape2)
+  
+  return(out)
+}
+
+truncated_logitnorm <- function(x, min, max, mu, sigma) {
+  
+  a <- logitnorm::plogitnorm(min, mu = mu, sigma = sigma)
+  b <- logitnorm::plogitnorm(max, mu = mu, sigma = sigma)
+  
+  uniform <- qunif(x, a, b)
+  out <- logitnorm::qlogitnorm(uniform, mu = mu, sigma = sigma)
+  
+  return(out)
+}
+
 # Random distributions  --------------------------------------------------------
 sample_distributions <- list(
+  
   "uniform" = function(x) x,
-  "normal" = function(x) qnorm(x, 0.5, 0.15),
-  "beta" = function(x) qbeta(x, 8, 2),
-  "beta2" = function(x) qbeta(x, 2, 8),
-  "beta3" = function(x) qbeta(x, 2, 0.8),
-  "beta4" = function(x) qbeta(x, 0.8, 2),
-  "logitnormal" = function(x) logitnorm::qlogitnorm(x, 0, 3.16)
-  # Logit-normal, Bates too?
+  "normal" = function(x) truncated_normal(x, 0, 1, 0.5, 0.15),
+  "beta" = function(x) truncated_beta(x, 0, 1, 8, 2),
+  "beta2" = function(x) truncated_beta(x, 0, 1, 2, 8),
+  "beta3" = function(x) truncated_beta(x, 0, 1, 2, 0.8),
+  "beta4" = function(x) truncated_beta(x, 0, 1, 0.8, 2),
+  "logitnormal" = function(x) truncated_logitnorm(x, 0, 1, 0, 3.16)
+  
 )
 
 random_distributions <- function(X, phi) {
@@ -702,7 +737,8 @@ y <- mclapply(1:nrow(final.mat), function(i) {
 
 final.dt <- do.call(rbind, y) %>%
   cbind(final.mat, .) %>%
-  data.table()
+  data.table() %>%
+  .[, id:= .I]
 
 # EXPORT RESULTS ---------------------------------------------------------------
 fwrite(final.dt, "final.dt.csv")
@@ -732,19 +768,43 @@ scatter <- melt(final.dt, measure.vars = disc.type) %>%
 
 legend <- get_legend(scatter + theme(legend.position = "top"))
 
-scatter.plot <- plot_grid(legend, scatter, ncol = 1, rel_heights = c(0.19, 0.81))
+scatter.plot <- plot_grid(legend, scatter, ncol = 1, rel_heights = c(0.25, 0.75))
 scatter.plot
 
 # BOXPLOT ----------------------------------------------------------------------
 boxplots <-  melt(final.dt, measure.vars = disc.type) %>%
   ggplot(., aes(reorder(variable, value), value)) +
   geom_boxplot() +
-  coord_flip() +
   labs(y = "$r$", x = "") +
   scale_y_continuous(breaks = pretty_breaks(n = 3)) +
   theme_AP()
 
 boxplots
+```
+
+```{r density_plot, dependson="arrange_output", fig.height=2, fig.width=6}
+
+# DENSITY PLOT #################################################################
+
+density.plot <- melt(final.dt, measure.vars = disc.type) %>%
+  ggplot(., aes(value)) +
+  geom_density(alpha = 0.3, color = "black", fill = "blue") + 
+  facet_wrap(~variable, ncol = 7) + 
+  scale_x_continuous(breaks = pretty_breaks(n = 3)) +
+  labs(x = "$r$", y = "Density") +
+  theme_AP()
+
+density.plot
+```
+
+
+```{r refine_boxplots, dependson=c("plot_output", "density_plot"), fig.height=3, fig.width=6}
+
+# REFINE BOXPLOTS ##############################################################
+
+scatter_and_boxplots <- plot_grid(scatter.plot, density.plot, ncol = 1, 
+                                  labels = "auto", rel_heights = c(0.56, 0.44))
+
 ```
 
 ```{r boxplots_out, dependson="arrange_output", fig.width=6, fig.height=1.8}
@@ -779,6 +839,169 @@ scatter.n
 plot_grid(scatter.plot, scatter.d, ncol = 1, 
           labels = "auto", rel_heights = c(0.55, 0.45))
 ```
+
+```{r pairwise_mood, dependson="arrange_output", fig.height=2.5, fig.width=6}
+
+# PAIRWISE CORRECTED MOOD TEST #################################################
+
+mood.test.dt <- melt(final.dt, measure.vars = disc.type)
+
+moot.output <- RVAideMemoire::pairwise.mood.medtest(resp = mood.test.dt$value, 
+                                                    fact = mood.test.dt$variable)$p.value 
+
+pvalue.plot <- ggcorrplot::ggcorrplot(moot.output, type = "lower") + 
+  scale_fill_gradient(low = "white", high = "red", 
+                      name = "$p$-value") + 
+  theme_AP() + 
+  labs(x = "", y = "") + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+
+# HIERARCHICAL CLUSTER #########################################################
+
+df <- final.dt[, ..disc.type] %>%
+  data.frame()
+
+colclus <- hclust(dist(t(df) )) #cluster the columns
+
+tree.plot <- ggplot() + ggdendroplot::geom_dendro(colclus) + 
+  theme_AP() +
+  labs(x = "", y = "") +
+  coord_flip()
+
+mood.tree.plot <- plot_grid(pvalue.plot, tree.plot, ncol = 2, labels = c("c", "d"),
+                            rel_widths = c(0.6, 0.4))
+mood.tree.plot
+```
+
+```{r scatter_mood, dependson=c("pairwise_mood", "plot_output", "refine_boxplots", "density_plot"), fig.height=5.5, fig.width=6}
+
+plot_grid(scatter_and_boxplots, mood.tree.plot, ncol = 1, 
+          rel_heights = c(0.6, 0.4))
+```
+
+# Check negative values
+
+```{r negative_algo, dependson="arrange_output"}
+
+# NEGATIVE VALUES --------------------------------------------------------------
+
+negative.dt <- melt(final.dt, measure.vars = disc.type) %>%
+  .[value < 0] 
+
+# DISCREPANCY ------------------------------------------------------------------
+
+negative_fun <- function(cost.discrepancy, base.sample.size, 
+                         tau, k, epsilon, phi, disc.measure) {
+  
+  params <- paste("X", 1:k, sep = "")
+  
+  # If for the sampling method ---------------------
+  
+  if (tau == 1) {
+    
+    type <- "R"
+    
+  } else if (tau == 2) {
+    
+    type <- "QRN"
+  }
+  
+  # For discrepancy --------------------------------
+  
+  set.seed(epsilon)
+  mat.disc <- sobol_matrices(N = cost.discrepancy, params = params, matrices = "A", 
+                             type = type)
+  set.seed(epsilon)
+  mat.disc2 <- random_distributions(mat.disc, phi = phi)
+  Y <- metafunction(mat.disc2, epsilon = epsilon)
+  discrepancy <- discrepancy(mat = mat.disc, y = Y, params = params, type = disc.measure)
+  
+  # For Jansen ------------------------------------
+  
+  set.seed(epsilon)
+  mat.jansen <- sobol_matrices(matrices = c("A", "AB"), N = base.sample.size, 
+                               params = params, type = type)
+  
+  set.seed(epsilon)
+  mat.jansen <- random_distributions(mat.jansen, phi = phi)
+  y <- metafunction(mat.jansen, epsilon = epsilon)
+  jansen <- jansen_ti(d = y, N = base.sample.size, params = params)
+  
+  # Merge and create dataset ----------------------
+  
+  output <- data.table(cbind(discrepancy, jansen)) %>%
+    .[, `:=` (params = factor(params, levels = params),
+              ranks.jansen = rank(jansen),
+              ranks.discrepancy = rank(discrepancy), 
+              savage.jansen = savage_scores(jansen, type = type), 
+              savage.discrepancy = savage_scores(discrepancy, type))]
+  
+  # Plots
+  
+  scatter.plot <- data.table(cbind(mat.disc, Y)) %>%
+    melt(., measure.vars = params) %>%
+    ggplot(., aes(value, Y)) + 
+    geom_hex() +
+    stat_summary_bin(fun = "mean", geom = "point", colour = "red", size = 0.7) +
+    facet_wrap(~variable, ncol = 4) + 
+    theme_AP()
+  
+  bar.plot <- ggplot(output, aes(params, jansen)) +
+    geom_bar(stat = "identity") + 
+    labs(x = "", y = "Sobol' indices") +
+    theme_AP()
+  
+  full.output <- list(output, scatter.plot, bar.plot)
+  names(full.output) <- c("output", "scatter", "bar")
+  
+  return(full.output)
+}
+```
+
+```{r run_negative, dependson="negative_algo"}
+
+# RUN FUNCTION #################################################################
+
+out.dt <- mclapply(1:nrow(negative.dt), function(i) {
+  
+  out <- negative_fun(cost.discrepancy = negative.dt[i]$cost.discrepancy, 
+                      base.sample.size = negative.dt[i]$base.sample.size, 
+                      tau = negative.dt[i]$tau,
+                      k = negative.dt[i]$k,
+                      epsilon = negative.dt[i]$epsilon,
+                      phi = negative.dt[i]$phi, 
+                      disc.measure = negative.dt[i]$variable)
+  
+}, mc.cores = detectCores())
+```
+
+```{r plot_negative, dependson="run_negative", fig.height=2.8, fig.width=6}
+
+# ARRANGE AND PLOT NEGATIVE VALUES #############################################
+
+da <- final.dt[negative.dt[, id]] %>%
+  .[, row:= .I]
+
+vec.split <- split(da$row, ceiling(seq_along(da$row)/10))
+
+lapply(vec.split, function(id) {
+  
+  da[id] %>%
+  melt(., measure.vars = disc.type) %>%
+  ggplot(., aes(variable, value, fill = ifelse(value < 0, "red", NA))) + 
+  geom_bar(stat = "identity") + 
+  facet_wrap(~id, ncol = 5) +
+  scale_y_continuous(breaks = pretty_breaks(n = 2)) +
+  coord_flip() +
+  theme_AP() + 
+  labs(x = "", y = "$r$") +
+  theme(legend.position = "none")
+  
+})
+
+```
+
+
 
 # Computing time
 
