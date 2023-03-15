@@ -1,4 +1,4 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6760348.svg)](https://doi.org/10.5281/zenodo.6760348)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7736212.svg)](https://doi.org/10.5281/zenodo.7736212)
 
 # Discrepancy measures for sensitivity analysis
 
