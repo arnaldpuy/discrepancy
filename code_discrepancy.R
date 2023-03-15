@@ -1,8 +1,8 @@
-## ----setup, include=FALSE-------------------------------------------------------------------
+## ----setup, include=FALSE------------------------------------------------------------
 knitr::opts_chunk$set(echo = TRUE, dev = "tikz", cache = TRUE)
 
 
-## ---- results="hide", message=FALSE, warning=FALSE, cache=FALSE-----------------------------
+## ---- results="hide", message=FALSE, warning=FALSE, cache=FALSE----------------------
 
 # PRELIMINARY ##################################################################
 
@@ -43,7 +43,7 @@ for(i in 1:length(cpp_functions)) {
 }
 
 
-## ----functions------------------------------------------------------------------------------
+## ----functions-----------------------------------------------------------------------
 
 # DEFINE FUNCTIONS #############################################################
 
@@ -195,7 +195,7 @@ jansen_ti <- function(d, N, params) {
 }
 
 
-## ----meta_distributions---------------------------------------------------------------------
+## ----meta_distributions--------------------------------------------------------------
 
 # DISTRIBUTIONS OF THE METAFUNCTIONS ###########################################
 
@@ -278,7 +278,7 @@ random_distributions <- function(X, phi) {
 }
 
 
-## ----plot_distributions, dependson="meta_distributions", fig.width=4, fig.height=2.3--------
+## ----plot_distributions, dependson="meta_distributions", fig.width=4, fig.height=2.3----
 
 # PLOT DISTRIBUTIONS ###########################################################
 
@@ -355,7 +355,7 @@ plot.metafunction <- ggplot(data.frame(x = runif(100)), aes(x)) +
 plot.metafunction
 
 
-## ----list_functions-------------------------------------------------------------------------
+## ----list_functions------------------------------------------------------------------
 
 # LIST OF FUNCTIONS ############################################################
 
@@ -406,7 +406,7 @@ for (i in names(f_list)) {
 ind
 
 
-## ----plot_list_functions, dependson="list_functions", fig.height=3.7, fig.width=2.5---------
+## ----plot_list_functions, dependson="list_functions", fig.height=3.7, fig.width=2.5----
 
 # PLOT LIST OF FUNCTIONS #######################################################
 
@@ -418,7 +418,7 @@ scat_plot <- plot_grid(plotlist = plot_list, ncol = 1, labels = "auto")
 scat_plot
 
 
-## ----plot_list_functions2, dependson="list_functions", fig.height=1.2, fig.width=6----------
+## ----plot_list_functions2, dependson="list_functions", fig.height=1.2, fig.width=6----
 
 # PLOT LIST OF FUNCTIONS #######################################################
 
@@ -430,7 +430,7 @@ scat_plot <- plot_grid(plotlist = plot_list, ncol = 3, labels = "auto")
 scat_plot
 
 
-## ----plot_sampling_fun----------------------------------------------------------------------
+## ----plot_sampling_fun---------------------------------------------------------------
 
 # FUNCTION TO DRAW SAMPLING POINTS IN GRID #####################################
 
@@ -470,7 +470,7 @@ plot_grid_fun <- function(N, type, output = "plot") {
 }
 
 
-## ----plot_sampling, dependson="plot_sampling_fun", fig.height=2.5, fig.width=3.4------------
+## ----plot_sampling, dependson="plot_sampling_fun", fig.height=2.5, fig.width=3.4-----
 
 # PLOT #########################################################################
 
@@ -490,7 +490,7 @@ all.grids <- plot_grid(out[[1]], out[[2]], ncol = 1, labels = "auto")
 all.grids
 
 
-## ----extract_ersatz, fig.height=2.5, fig.width=2.5------------------------------------------
+## ----extract_ersatz, fig.height=2.5, fig.width=2.5-----------------------------------
 
 # EXTRACT ERSATZ MEASURE #######################################################
 
@@ -499,14 +499,14 @@ N <- 2^seq(2, 14, 2)
 ersatz.measure <- lapply(type, function(type) lapply(N, function(N) 
   plot_grid_fun(N = N, type = type, output = "ersatz")))
 
-col_names <- c("Random", "QRN")
+col_names <- c("Random", "QMC")
 dt.ersatz <- data.table(do.call(cbind, ersatz.measure))
 dt.ersatz <- setnames(dt.ersatz, paste("V", 1:2, sep = ""), col_names)
 dt.ersatz <- dt.ersatz[, sample.size:= N]
 
 dt.ersatz[, (col_names):= lapply(.SD, as.numeric), .SDcols = (col_names)]
 
-plot.ersatz <- melt(dt.ersatz, measure.vars = c("Random", "QRN")) %>%
+plot.ersatz <- melt(dt.ersatz, measure.vars = c("Random", "QMC")) %>%
   ggplot(., aes(sample.size, value, color = variable, group = variable)) +
   geom_line() + 
   scale_x_log10() +
@@ -524,7 +524,7 @@ plot_grid(all.grids, plot.ersatz, ncol = 2, labels = c("", "c"),
           rel_widths = c(0.6, 0.4))
 
 
-## ----model, dependson=c("functions", "meta_distributions")----------------------------------
+## ----model, dependson=c("functions", "meta_distributions")---------------------------
 
 # DEFINE MODEL #################################################################
 
@@ -639,7 +639,7 @@ model_fun <- function(tau, epsilon, base.sample.size, cost.discrepancy, phi, k) 
 }
 
 
-## ----sample_matrix, dependson="model"-------------------------------------------------------
+## ----sample_matrix, dependson="model"------------------------------------------------
 
 # CREATE SAMPLE MATRIX #########################################################
 
@@ -663,7 +663,7 @@ cost.discrepancy <- cost.jansen
 final.mat <- cbind(mat, cost.jansen, cost.saltelli, cost.discrepancy)
 
 
-## ----run_model, dependson="sample_matrix"---------------------------------------------------
+## ----run_model, dependson="sample_matrix"--------------------------------------------
 
 # RUN SIMULATIONS ##############################################################
 
@@ -677,7 +677,7 @@ y <- mclapply(1:nrow(final.mat), function(i) {
   mc.cores = floor(detectCores() * 0.75))
 
 
-## ----arrange_output, dependson="run_model"--------------------------------------------------
+## ----arrange_output, dependson="run_model"-------------------------------------------
 
 # ARRANGE OUTPUT ###############################################################
 
@@ -700,7 +700,7 @@ disc.type <- c("symmetric", "star", "L2", "centered",
 # SCATTERPLOT ------------------------------------------------------------------
 scatter <- melt(final.dt, measure.vars = disc.type) %>%
   ggplot(., aes(cost.discrepancy, k, color = value)) +
-  geom_point(size = 0.4) + 
+  geom_point(size = 0.3) + 
   scale_colour_gradientn(colours = c("black", "purple", "red", "orange", 
                                      "yellow", "lightgreen"), 
                          name = expression(italic(r)), 
@@ -728,7 +728,7 @@ boxplots <-  melt(final.dt, measure.vars = disc.type) %>%
 boxplots
 
 
-## ----density_plot, dependson="arrange_output", fig.height=2, fig.width=6--------------------
+## ----density_plot, dependson="arrange_output", fig.height=2, fig.width=6-------------
 
 # DENSITY PLOT #################################################################
 
@@ -752,7 +752,7 @@ scatter_and_boxplots <- plot_grid(scatter.plot, density.plot, ncol = 1,
 
 
 
-## ----boxplots_out, dependson="arrange_output", fig.width=6, fig.height=1.8------------------
+## ----boxplots_out, dependson="arrange_output", fig.width=6, fig.height=1.8-----------
 
 # PLOT SCATTERPLOTS OF Y AGAINST X_i ###########################################
 
@@ -767,7 +767,7 @@ scatter.d <- melt(final.dt, measure.vars = disc.type) %>%
 scatter.d
 
 
-## ----boxplots_samplesize, dependson="arrange_output", fig.width=6, fig.height=1.8-----------
+## ----boxplots_samplesize, dependson="arrange_output", fig.width=6, fig.height=1.8----
 scatter.n <- melt(final.dt, measure.vars = disc.type) %>%
   ggplot(., aes(cost.discrepancy, value)) +
   geom_point(alpha = 0.2, size = 0.8) + 
@@ -785,7 +785,7 @@ plot_grid(scatter.plot, scatter.d, ncol = 1,
           labels = "auto", rel_heights = c(0.55, 0.45))
 
 
-## ----pairwise_mood, dependson="arrange_output", fig.height=2.5, fig.width=6-----------------
+## ----pairwise_mood, dependson="arrange_output", fig.height=2.5, fig.width=6----------
 
 # PAIRWISE CORRECTED MOOD TEST #################################################
 
@@ -824,7 +824,7 @@ plot_grid(scatter_and_boxplots, mood.tree.plot, ncol = 1,
           rel_heights = c(0.6, 0.4))
 
 
-## ----negative_algo, dependson="arrange_output"----------------------------------------------
+## ----negative_algo, dependson="arrange_output"---------------------------------------
 
 # NEGATIVE VALUES --------------------------------------------------------------
 
@@ -901,7 +901,7 @@ negative_fun <- function(cost.discrepancy, base.sample.size,
 }
 
 
-## ----run_negative, dependson="negative_algo"------------------------------------------------
+## ----run_negative, dependson="negative_algo"-----------------------------------------
 
 # RUN FUNCTION #################################################################
 
@@ -918,7 +918,7 @@ out.dt <- mclapply(1:nrow(negative.dt), function(i) {
 }, mc.cores = detectCores())
 
 
-## ----plot_negative, dependson="run_negative", fig.height=2.8, fig.width=6-------------------
+## ----plot_negative, dependson="run_negative", fig.height=2.8, fig.width=6------------
 
 # ARRANGE AND PLOT NEGATIVE VALUES #############################################
 
@@ -944,7 +944,46 @@ lapply(vec.split, function(id) {
 
 
 
-## ----computing_time-------------------------------------------------------------------------
+## ----fraction_0_5, dependson=c("arrange_output", "sample_matrix"), fig.height=2.5, fig.width=3----
+
+# PLOT FRACTION OF SIMULATIONS WITH R < 0.5 ####################################
+
+melt(final.dt, measure.vars = disc.type) %>%
+  .[value < 0] %>%
+  .[, .(count = .N), variable] %>%
+  .[, fraction := count / N, variable] %>%
+  ggplot(., aes(reorder(variable, fraction), fraction)) +
+  geom_bar(stat = "identity") + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))+
+  labs(x = "", y = "Fraction") +
+  theme_AP()
+
+
+
+## ----plot_scatter, dependson="arrange_output", fig.height=6.3, fig.width=6-----------
+
+# SCATTERPLOTS ###########################################################
+da <- melt(final.dt, measure.vars = disc.type) %>%
+    melt(., measure.vars = params)
+  
+#recode factor levels
+da$variable.1 <- recode(da$variable.1, 
+                        epsilon = "$\\epsilon$", 
+                        phi = "$\\phi$", 
+                        k = "$d$", 
+                        tau = "$\\tau$", 
+                        base.sample.size = "$N_s$")
+  
+
+ggplot(da, aes(value.1, value, color = ifelse(value < 0, "red", NA))) +
+  geom_hex() +
+  facet_grid(variable ~ variable.1, scales = "free_x") + 
+  theme_AP() + 
+  labs(x = "", y = "$r$") +
+  theme(legend.position = "none")
+
+
+## ----computing_time------------------------------------------------------------------
 
 ####### COMPUTING TIME #########################################################
 
@@ -978,7 +1017,7 @@ y <- mclapply(1:nrow(dt), function(i) {
 }, mc.cores = detectCores())
 
 
-## ----arrange_timing, dependson="computing_time"---------------------------------------------
+## ----arrange_timing, dependson="computing_time"--------------------------------------
 
 # ARRANGE DATA #################################################################
 
@@ -1000,7 +1039,7 @@ fwrite(timing.dt, "timing.dt.csv")
 fwrite(dt, "dt.csv")
 
 
-## ----plot_timing, dependson="arrange_timing", fig.height=2, fig.width=6, warning=FALSE------
+## ----plot_timing, dependson="arrange_timing", fig.height=2, fig.width=6, warning=FALSE----
 
 # PLOT RESULTS #################################################################
 
@@ -1056,7 +1095,7 @@ all.boxplots
 plot_grid(all.scatter, all.boxplots, ncol = 1, rel_heights = c(0.5, 0.4))
 
 
-## ----time_complexity------------------------------------------------------------------------
+## ----time_complexity-----------------------------------------------------------------
 
 # CALCULATE TIME COMPLEXITY ####################################################
 
@@ -1086,7 +1125,7 @@ timing.dimensions <- mclapply(dimensions, function(k)
   timing_fun(N = 500, k = k), mc.cores = detectCores())
 
 
-## ----arrange_time_complexity, dependson="time_complexity"-----------------------------------
+## ----arrange_time_complexity, dependson="time_complexity"----------------------------
 
 # ARRANGE RESULTS ##############################################################
 
@@ -1111,12 +1150,12 @@ full.timing.dt <- rbind(timing.N.dt, timing.dimensions.dt)
 
 fwrite(full.timing.dt, "full.timing.dt.csv")
 
-full.timing.dt <- fread("full.timing.dt.csv")
+
 ## ----plot_time_complexity, dependson="arrange_time_complexity", fig.height=1.8, fig.width=4.5----
 
 # PLOT RESULTS #################################################################
 
-time.complexity <- ggplot(full.timing.dt[Discrepancy == "ersatz"], aes(approach, y, 
+time.complexity <- ggplot(full.timing.dt, aes(approach, y, 
                                               group = Discrepancy, 
                                               color = Discrepancy)) +
   geom_line() + 
@@ -1124,13 +1163,14 @@ time.complexity <- ggplot(full.timing.dt[Discrepancy == "ersatz"], aes(approach,
   facet_wrap(~method, scales = "free_x") +
   labs(x = "", y = "Time (milliseconds)") +
   scale_x_continuous(breaks = pretty_breaks(n = 3)) +
+  scale_y_continuous(trans = "log2") +
   theme(legend.key.width = unit(0.4, "cm"),
         legend.key.height = unit(0.4, "cm"))
 
 time.complexity
 
 
-## ----session_information--------------------------------------------------------------------
+## ----session_information-------------------------------------------------------------
 
 # SESSION INFORMATION ##########################################################
 
@@ -1145,61 +1185,3 @@ cat("Num cores:   "); print(detectCores(logical = FALSE))
 ## Return number of threads
 cat("Num threads: "); print(detectCores(logical = FALSE))
 
-
-
-DT = data.table(a=sample(1:2), b=sample(1:1000,20))
-
-DT[order(-b),head(b,5),by=a]
-
-
-final.dt <- fread("final.dt.csv")
-summary_fun = function(x) list(mean = mean(x), median = median(x))
-stat.dt <- final.dt[, lapply(.SD, summary_fun), .SDcols = (disc.type)] %>%
-  .[, stat:= c("mean", "median")]
-
-melt(stat.dt, measure.vars = disc.type) %>%
-  .[stat == "median"] %>%
-  .[order(value)]
-  
-  .[order(-value),head(value,5),by=stat]
-  
-  .[.[order(-value),.I[1:.N<=6],"stat"]$V1]
-  .[order(-value), head(value, 5),by = stat]
-  .[order(value), .SD, stat]
-
-
-  # SCATTERPLOTS ###########################################################
-da <- melt(final.dt, measure.vars = disc.type) %>%
-    melt(., measure.vars = params)
-  
-#recode factor levels
-da$variable.1 <- recode(da$variable.1, 
-                        epsilon = "$\\epsilon$", 
-                        phi = "$\\phi$", 
-                        k = "$k$", 
-                        tau = "$\\tau$", 
-                        base.sample.size = "$N_s$")
-  
-
-ggplot(da, aes(value.1, value, color = ifelse(value < 0, "red", NA))) +
-    geom_point(alpha = 0.7, size = 0.8) +
-    facet_grid(variable ~ variable.1, scales = "free_x") + 
-    theme_AP() + 
-    labs(x = "", y = "$r$") +
-    theme(legend.position = "none")
-    
-    
-    
-  .[, .(epsilon, phi, k, tau, base.sample.size, value)]
-res.km <- eclust(df, "kmeans", nstart = 25)
-
-
-ggplot(da, aes(value.1, value, color = ifelse(value < 0, "red", NA))) +
-  geom_hex() +
-  facet_grid(variable ~ variable.1, scales = "free_x") + 
-  theme_AP() + 
-  labs(x = "", y = "$r$") +
-  theme(legend.position = "none")
-
-data("USArrests")
-df <- scale(USArrests)
