@@ -1111,12 +1111,12 @@ full.timing.dt <- rbind(timing.N.dt, timing.dimensions.dt)
 
 fwrite(full.timing.dt, "full.timing.dt.csv")
 
-
+full.timing.dt <- fread("full.timing.dt.csv")
 ## ----plot_time_complexity, dependson="arrange_time_complexity", fig.height=1.8, fig.width=4.5----
 
 # PLOT RESULTS #################################################################
 
-time.complexity <- ggplot(full.timing.dt, aes(approach, y, 
+time.complexity <- ggplot(full.timing.dt[Discrepancy == "ersatz"], aes(approach, y, 
                                               group = Discrepancy, 
                                               color = Discrepancy)) +
   geom_line() + 
@@ -1145,3 +1145,61 @@ cat("Num cores:   "); print(detectCores(logical = FALSE))
 ## Return number of threads
 cat("Num threads: "); print(detectCores(logical = FALSE))
 
+
+
+DT = data.table(a=sample(1:2), b=sample(1:1000,20))
+
+DT[order(-b),head(b,5),by=a]
+
+
+final.dt <- fread("final.dt.csv")
+summary_fun = function(x) list(mean = mean(x), median = median(x))
+stat.dt <- final.dt[, lapply(.SD, summary_fun), .SDcols = (disc.type)] %>%
+  .[, stat:= c("mean", "median")]
+
+melt(stat.dt, measure.vars = disc.type) %>%
+  .[stat == "median"] %>%
+  .[order(value)]
+  
+  .[order(-value),head(value,5),by=stat]
+  
+  .[.[order(-value),.I[1:.N<=6],"stat"]$V1]
+  .[order(-value), head(value, 5),by = stat]
+  .[order(value), .SD, stat]
+
+
+  # SCATTERPLOTS ###########################################################
+da <- melt(final.dt, measure.vars = disc.type) %>%
+    melt(., measure.vars = params)
+  
+#recode factor levels
+da$variable.1 <- recode(da$variable.1, 
+                        epsilon = "$\\epsilon$", 
+                        phi = "$\\phi$", 
+                        k = "$k$", 
+                        tau = "$\\tau$", 
+                        base.sample.size = "$N_s$")
+  
+
+ggplot(da, aes(value.1, value, color = ifelse(value < 0, "red", NA))) +
+    geom_point(alpha = 0.7, size = 0.8) +
+    facet_grid(variable ~ variable.1, scales = "free_x") + 
+    theme_AP() + 
+    labs(x = "", y = "$r$") +
+    theme(legend.position = "none")
+    
+    
+    
+  .[, .(epsilon, phi, k, tau, base.sample.size, value)]
+res.km <- eclust(df, "kmeans", nstart = 25)
+
+
+ggplot(da, aes(value.1, value, color = ifelse(value < 0, "red", NA))) +
+  geom_hex() +
+  facet_grid(variable ~ variable.1, scales = "free_x") + 
+  theme_AP() + 
+  labs(x = "", y = "$r$") +
+  theme(legend.position = "none")
+
+data("USArrests")
+df <- scale(USArrests)

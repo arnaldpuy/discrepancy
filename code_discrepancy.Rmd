@@ -545,14 +545,14 @@ N <- 2^seq(2, 14, 2)
 ersatz.measure <- lapply(type, function(type) lapply(N, function(N) 
   plot_grid_fun(N = N, type = type, output = "ersatz")))
 
-col_names <- c("Random", "QRN")
+col_names <- c("Random", "QMC")
 dt.ersatz <- data.table(do.call(cbind, ersatz.measure))
 dt.ersatz <- setnames(dt.ersatz, paste("V", 1:2, sep = ""), col_names)
 dt.ersatz <- dt.ersatz[, sample.size:= N]
 
 dt.ersatz[, (col_names):= lapply(.SD, as.numeric), .SDcols = (col_names)]
 
-plot.ersatz <- melt(dt.ersatz, measure.vars = c("Random", "QRN")) %>%
+plot.ersatz <- melt(dt.ersatz, measure.vars = c("Random", "QMC")) %>%
   ggplot(., aes(sample.size, value, color = variable, group = variable)) +
   geom_line() + 
   scale_x_log10() +
@@ -754,7 +754,7 @@ disc.type <- c("symmetric", "star", "L2", "centered",
 # SCATTERPLOT ------------------------------------------------------------------
 scatter <- melt(final.dt, measure.vars = disc.type) %>%
   ggplot(., aes(cost.discrepancy, k, color = value)) +
-  geom_point(size = 0.4) + 
+  geom_point(size = 0.3) + 
   scale_colour_gradientn(colours = c("black", "purple", "red", "orange", 
                                      "yellow", "lightgreen"), 
                          name = expression(italic(r)), 
@@ -1001,6 +1001,44 @@ lapply(vec.split, function(id) {
 
 ```
 
+```{r fraction_0_5, dependson=c("arrange_output", "sample_matrix"), fig.height=2.5, fig.width=3}
+
+# PLOT FRACTION OF SIMULATIONS WITH R < 0.5 ####################################
+
+melt(final.dt, measure.vars = disc.type) %>%
+  .[value < 0] %>%
+  .[, .(count = .N), variable] %>%
+  .[, fraction := count / N, variable] %>%
+  ggplot(., aes(reorder(variable, fraction), fraction)) +
+  geom_bar(stat = "identity") + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))+
+  labs(x = "", y = "Fraction") +
+  theme_AP()
+
+```
+
+```{r plot_scatter, dependson="arrange_output", fig.height=6.3, fig.width=6}
+
+# SCATTERPLOTS ###########################################################
+da <- melt(final.dt, measure.vars = disc.type) %>%
+    melt(., measure.vars = params)
+  
+#recode factor levels
+da$variable.1 <- recode(da$variable.1, 
+                        epsilon = "$\\epsilon$", 
+                        phi = "$\\phi$", 
+                        k = "$d$", 
+                        tau = "$\\tau$", 
+                        base.sample.size = "$N_s$")
+  
+
+ggplot(da, aes(value.1, value, color = ifelse(value < 0, "red", NA))) +
+  geom_hex() +
+  facet_grid(variable ~ variable.1, scales = "free_x") + 
+  theme_AP() + 
+  labs(x = "", y = "$r$") +
+  theme(legend.position = "none")
+```
 
 
 # Computing time
@@ -1185,6 +1223,7 @@ time.complexity <- ggplot(full.timing.dt, aes(approach, y,
   facet_wrap(~method, scales = "free_x") +
   labs(x = "", y = "Time (milliseconds)") +
   scale_x_continuous(breaks = pretty_breaks(n = 3)) +
+  scale_y_continuous(trans = "log2") +
   theme(legend.key.width = unit(0.4, "cm"),
         legend.key.height = unit(0.4, "cm"))
 
