@@ -1,5 +1,5 @@
 ---
-title: "Discrepancy measures for sensitivity analysis"
+title: "Discrepancy measures for global sensitivity analysis"
 subtitle: "R code"
 author: "Arnald Puy"
 header-includes:
@@ -55,10 +55,23 @@ theme_AP <- function() {
           strip.background = element_rect(fill = "white"))
 }
 
+# Function to check if sensobol is installed. If not, install it. Load it.
+
+check_install_load_package <- function(package_name) {
+  if (!requireNamespace(package_name, quietly = TRUE)) {
+    install.packages(package_name, dependencies = TRUE)
+    library(package_name, character.only = TRUE)
+  } else {
+    library(package_name, character.only = TRUE)
+  }
+}
+
+check_install_load_package("sensobol")
+
 # Load the packages
-sensobol::load_packages(c("sensobol", "data.table", "tidyverse", "parallel", 
-                          "RcppAlgos", "scales", "doParallel", "benchmarkme", 
-                          "cowplot", "wesanderson", "microbenchmark"))
+load_packages(c("data.table", "tidyverse", "parallel", 
+                "RcppAlgos", "scales", "doParallel", "benchmarkme", 
+                "cowplot", "wesanderson", "microbenchmark"))
 
 # CHECKPOINT -------------------------------------------------------------------
 
@@ -540,7 +553,7 @@ all.grids
 
 # EXTRACT ERSATZ MEASURE #######################################################
 
-N <- 2^seq(2, 14, 2)
+N <- 2^seq(2, 16, 2)
 
 ersatz.measure <- lapply(type, function(type) lapply(N, function(N) 
   plot_grid_fun(N = N, type = type, output = "ersatz")))
@@ -555,7 +568,8 @@ dt.ersatz[, (col_names):= lapply(.SD, as.numeric), .SDcols = (col_names)]
 plot.ersatz <- melt(dt.ersatz, measure.vars = c("Random", "QMC")) %>%
   ggplot(., aes(sample.size, value, color = variable, group = variable)) +
   geom_line() + 
-  scale_x_log10() +
+  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                labels = trans_format("log10", math_format(10^.x))) + 
   labs(x = "$N_s$", y = "S-ersatz value") +
   scale_color_discrete(name = "Sampling") +
   theme_AP() + 
@@ -760,7 +774,7 @@ scatter <- melt(final.dt, measure.vars = disc.type) %>%
                          name = expression(italic(r)), 
                          breaks = pretty_breaks(n = 3)) +
   facet_grid(~variable) + 
-  labs(x = "Nº of model runs", y = "$d$") +
+  labs(x = "$C$", y = "$d$") +
   scale_x_continuous(breaks = pretty_breaks(n = 3)) + 
   scale_y_continuous(breaks = pretty_breaks(n = 3)) + 
   theme_AP() + 
