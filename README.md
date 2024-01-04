@@ -4,9 +4,9 @@
 
 Arnald Puy, Pamphile Roy and Andrea Saltelli
 
-This is the ``R`` code of the report, whose abstract reads as follows:
+This is the ``R`` code of the manuscript, whose abstract reads as follows:
 
-*While sensitivity analysis improves the transparency and reliability of mathematical models, its uptake by modelers is still scarce. This is partially explained by its technical requirements, which may be hard to understand and implement by the non-specialist. Here we propose a sensitivity analysis approach based on the concept of discrepancy that is as easy to understand as the visual inspection of input-output scatterplots. Firstly, we show that some discrepancy measures are able to rank the most influential parameters of a model almost as accurately as the variance-based total sensitivity index. We then introduce an ersatz-discrepancy whose performance as a sensitivity measure matches that of the best-performing discrepancy algorithms, is orders of magnitude faster, simple to implement and much easier to interpret.*
+*While sensitivity analysis improves the transparency and reliability of mathematical models, its uptake by modelers is still scarce. This is partially explained by its technical requirements, which may be hard to understand and implement by the non-specialist. Here we propose a sensitivity analysis approach based on the concept of discrepancy that is as easy to understand as the visual inspection of input-output scatterplots. Firstly, we show that some discrepancy measures are able to rank the most influential parameters of a model almost as accurately as the variance-based total sensitivity index. We then introduce an ersatz-discrepancy whose performance as a sensitivity measure is similar that of the best-performing discrepancy algorithms, is simple to implement, easier to interpret and orders of magnitude faster.*
 
 ## The code
 
