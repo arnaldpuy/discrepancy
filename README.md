@@ -10,7 +10,7 @@ This is the ``R`` code of the manuscript, whose abstract reads as follows:
 
 ## The code
 
-As indicated in the R code, you first need to install the ``sensobol`` package, which includes the function ``load_packages``. This function allows to install and load all the required packages for the analysis in one go. Also note that the code makes use of several functions in ``C++`` (``.cpp``), which were developed for the ``R`` package ``sensitivity`` (Iooss et al. 2020). In order to run them you need to have installed a C++ compiler such as Clang, version 15.0.0.
+The code makes use of several functions in ``C++`` (``.cpp``), which were developed for the ``R`` package ``sensitivity`` (Iooss et al. 2020). In order to run them you need to have installed a C++ compiler such as Clang, version 15.0.0.
 
 Some sections of the code involve computationally intensive operations and hence the simulation may take a while to complete.
 
@@ -27,5 +27,6 @@ Hereby we inform on which code snippet reproduces which figure in the manuscript
 Iooss, B., Janon, A., Pujol, G., with contributions from Baptiste Broto, Boumhaout, K., Veiga, S. D., Delage, T., Amri, R. E., Fruth, J., Gilquin, L., Guillaume, J., Le Gratiet, L., Lemaitre, P., Marrel, A., Meynaoui, A., Nelson, B. L., Monari, F., Oomen, R., Rakovec, O., Ramos, B., Roustant, O., Song, E., Staum, J., Sueur, R., Touati, T. & Weber, F. 2020. *sensitivity: Global Sensitivity Analysis of Model Outputs*. R package version 1.27.0.
 
 Puy, A., Lo Piano, S., Saltelli, A., Levin, S.A., 2022. sensobol: an R package to compute variance-based sensitivity indices. *Journal of Statistical Software* 102, 1–37. https://doi.org/10.18637/jss.v102.i05
+
 
 

@@ -19,23 +19,15 @@ theme_AP <- function() {
           strip.background = element_rect(fill = "white"))
 }
 
-# Function to check if sensobol is installed. If not, install it. Load it.
-
-check_install_load_package <- function(package_name) {
-  if (!requireNamespace(package_name, quietly = TRUE)) {
-    install.packages(package_name, dependencies = TRUE)
-    library(package_name, character.only = TRUE)
-  } else {
-    library(package_name, character.only = TRUE)
-  }
-}
-
-check_install_load_package("sensobol")
-
 # Load the packages
-load_packages(c("data.table", "tidyverse", "parallel", 
-                "RcppAlgos", "scales", "doParallel", "benchmarkme", 
-                "cowplot", "wesanderson", "microbenchmark"))
+packages <- c("sensobol", "data.table", "tidyverse", "parallel",
+              "RcppAlgos", "scales", "doParallel", "benchmarkme",
+              "cowplot", "wesanderson", "microbenchmark")
+
+# Load and attach each package
+for (pkg in packages) {
+  library(pkg, character.only = TRUE)
+}
 
 # CHECKPOINT -------------------------------------------------------------------
 
